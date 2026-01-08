@@ -1,0 +1,51 @@
+from __future__ import annotations
+
+from datetime import timedelta
+import logging
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+
+from .api import MobileLinkApiClient, MobileLinkAuthError, MobileLinkApiError, PropaneTank
+from .const import (
+    CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_SELECTED_TANKS,
+    DEFAULT_SCAN_INTERVAL_SECONDS,
+    DOMAIN,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class MobileLinkCoordinator(DataUpdateCoordinator[dict[int, PropaneTank]]):
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        self.entry = entry
+        self.client = MobileLinkApiClient(hass)
+
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=f"{DOMAIN}-{entry.entry_id}",
+            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL_SECONDS),
+        )
+
+    async def _async_update_data(self) -> dict[int, PropaneTank]:
+        email = self.entry.data[CONF_EMAIL]
+        password = self.entry.data[CONF_PASSWORD]
+        selected = set(self.entry.data.get(CONF_SELECTED_TANKS, []))
+
+        try:
+            await self.client.login(email, password)
+            tanks = await self.client.discover_propane_tanks()
+            data = {t.apparatus_id: t for t in tanks if not selected or t.apparatus_id in selected}
+            return data
+
+        except MobileLinkAuthError as e:
+            raise ConfigEntryAuthFailed(str(e)) from e
+        except MobileLinkApiError as e:
+            raise UpdateFailed(str(e)) from e
+        except Exception as e:
+            raise UpdateFailed(f"Unexpected error: {e}") from e

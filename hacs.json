@@ -1,0 +1,8 @@
+{
+  "name": "Mobile Link Propane",
+  "content_in_root": false,
+  "render_readme": true,
+  "domains": [
+    "mobilelink_propane"
+  ]
+}

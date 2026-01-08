@@ -1,0 +1,52 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Mobile Link Propane",
+        "description": "Sign in with your Generac Mobile Link account.",
+        "data": {
+          "email": "Email",
+          "password": "Password"
+        }
+      },
+      "select_tanks": {
+        "title": "Select propane tanks",
+        "description": "Choose which tanks to add to Home Assistant.",
+        "data": {
+          "selected_tanks": "Tanks"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate",
+        "description": "Your Mobile Link session expired. Please re-enter your password.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect.",
+      "invalid_auth": "Invalid authentication."
+    },
+    "abort": {
+      "already_configured": "Account is already configured.",
+      "no_tanks": "No propane tanks were found on this account.",
+      "reauth_successful": "Re-authentication successful."
+    }
+  },
+  "options": {
+    "step": {
+      "select": {
+        "title": "Mobile Link Propane options",
+        "description": "Select tanks and which additional sensors to create.",
+        "data": {
+          "selected_tanks": "Tanks",
+          "create_last_reading_sensor": "Create Last Reading sensor",
+          "create_capacity_sensor": "Create Capacity sensor",
+          "create_battery_sensor": "Create Battery sensor",
+          "create_status_sensor": "Create Status sensor"
+        }
+      }
+    }
+  }
+}
