@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Mobile Link Propane",
-        "description": "Sign in with your Generac Mobile Link account.",
+        "description": "Sign in with your Generac Mobile Link account.\n\n{error_detail}",
         "data": {
           "email": "Email",
           "password": "Password"
@@ -26,7 +26,11 @@
     },
     "error": {
       "cannot_connect": "Failed to connect.",
-      "invalid_auth": "Invalid authentication."
+      "invalid_auth": "Invalid authentication.",
+      "password_reset_required": "Password reset required for this account. Reset it in the Mobile Link app/website, then try again.",
+      "account_locked": "Account appears locked/disabled. Try again later or unlock via Mobile Link support.",
+      "bot_block": "Mobile Link returned a bot-protection/captcha page. Try again later or from a different network.",
+      "access_denied": "Access was denied by the sign-in service."
     },
     "abort": {
       "already_configured": "Account is already configured.",

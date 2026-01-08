@@ -46,6 +46,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._email: str | None = None
         self._password: str | None = None
         self._tanks: dict[int, str] = {}
+        self._last_error_detail: str = ""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
@@ -56,9 +57,27 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             try:
                 tanks = await _login_and_discover(self.hass, email, password)
-            except MobileLinkAuthError:
-                errors["base"] = "invalid_auth"
-            except Exception:
+            except MobileLinkAuthError as e:
+                # Map structured auth errors to user-facing reasons, and log details for troubleshooting.
+                self._last_error_detail = f"{e.short()}: {e.detail()}"
+                _LOGGER.warning("Mobile Link login failed: %s", self._last_error_detail)
+
+                code = getattr(e, "code", "unknown")
+                if code in ("invalid_credentials",):
+                    errors["base"] = "invalid_auth"
+                elif code in ("password_reset_required",):
+                    errors["base"] = "password_reset_required"
+                elif code in ("account_locked",):
+                    errors["base"] = "account_locked"
+                elif code in ("bot_block",):
+                    errors["base"] = "bot_block"
+                elif code in ("access_denied",):
+                    errors["base"] = "access_denied"
+                else:
+                    errors["base"] = "cannot_connect"
+            except Exception as e:
+                self._last_error_detail = f"unexpected: {e}"
+                _LOGGER.exception("Unexpected error during Mobile Link login/discovery")
                 errors["base"] = "cannot_connect"
             else:
                 self._email = email
@@ -76,7 +95,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_PASSWORD): str,
             }
         )
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
+        return self.async_show_form(step_id="user", data_schema=schema, errors=errors, description_placeholders={"error_detail": self._last_error_detail})
 
     async def async_step_select_tanks(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         if not self._tanks:
@@ -147,6 +166,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self.config_entry = config_entry
         self._tanks: dict[int, str] = {}
+        self._last_error_detail: str = ""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         return await self.async_step_select()

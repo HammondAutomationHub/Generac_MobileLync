@@ -10,32 +10,74 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 _LOGGER_NAME = __name__
 
+def _looks_like_bot_block(text: str) -> bool:
+    t = (text or "").lower()
+    return any(s in t for s in ["incapsula", "captcha", "access denied", "request unsuccessful", "bot"])
+
+
+def _extract_b2c_error(text: str) -> str | None:
+    """Try to extract an Azure AD B2C error code like AADB2C90118 from HTML/JSON-ish text."""
+    if not text:
+        return None
+    m = re.search(r"AADB2C\d{5}", text)
+    return m.group(0) if m else None
+
+
+def _map_b2c_error_to_code(b2c_code: str | None) -> tuple[str, str | None]:
+    """Return (our_code, hint)."""
+    if not b2c_code:
+        return ("unknown", None)
+    # Common B2C codes (not exhaustive)
+    if b2c_code in ("AADB2C90091",):  # cancelled by user / access denied
+        return ("access_denied", None)
+    if b2c_code in ("AADB2C90118",):  # password reset
+        return ("password_reset_required", "Mobile Link requested a password reset")
+    if b2c_code in ("AADB2C90080", "AADB2C90079", "AADB2C90077"):
+        return ("account_locked", "Account may be locked or disabled")
+    if b2c_code in ("AADB2C90055",):
+        return ("invalid_credentials", None)
+    # MFA codes vary; treat as MFA required if mentioned
+    return ("b2c_error", f"Azure B2C error {b2c_code}")
+
+
 
 class MobileLinkAuthError(Exception):
-    """Raised when authentication fails."""
+    """Authentication or session establishment failed."""
+
+    def __init__(
+        self,
+        code: str,
+        step: str,
+        message: str,
+        *,
+        status: int | None = None,
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.step = step
+        self.status = status
+        self.hint = hint
+
+    def short(self) -> str:
+        parts = [self.code, self.step]
+        if self.status is not None:
+            parts.append(f"HTTP {self.status}")
+        return " / ".join(parts)
+
+    def detail(self) -> str:
+        msg = str(self)
+        if self.hint:
+            return f"{msg} ({self.hint})"
+        return msg
 
 
 class MobileLinkApiError(Exception):
-    """Raised for general API errors."""
+    """Non-auth API error."""
 
-
-@dataclass
-class TankDeviceInfo:
-    device_id: str | None = None
-    device_type: str | None = None
-    battery_level: str | None = None
-    status: str | None = None
-
-
-@dataclass
-class PropaneTank:
-    apparatus_id: int
-    name: str
-    fuel_level_percent: float | None
-    last_reading: str | None
-    capacity_gallons: str | None
-    is_connected: bool | None
-    device: TankDeviceInfo
+    def __init__(self, message: str, *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class MobileLinkApiClient:
@@ -68,42 +110,74 @@ class MobileLinkApiClient:
         self._tx: str | None = None
 
     async def login(self, email: str, password: str) -> None:
-        """Authenticate and establish a cookie session."""
+        """Authenticate and establish a cookie session.
+
+        Raises MobileLinkAuthError with a structured code + step when something goes wrong.
+        """
         try:
-            # 1) Ensure antiforgery cookie exists
-            await self._session.get(self.URL_ANTIFORGERY)
+            # 1) Ensure antiforgery cookie exists (required by the app)
+            anti = await self._session.get(self.URL_ANTIFORGERY)
+            if anti.status >= 400:
+                txt = await anti.text()
+                raise MobileLinkAuthError(
+                    "antiforgery_failed",
+                    "antiforgery",
+                    "Failed to obtain antiforgery cookie",
+                    status=anti.status,
+                    hint=txt[:120] or None,
+                )
 
-            # 2) Begin sign-in; this redirects to B2C authorize page
-            resp = await self._session.get(self.URL_SIGNIN, params={"email": email})
-            if resp.status >= 400:
-                raise MobileLinkAuthError(f"Sign-in start failed: HTTP {resp.status}")
-
-            # Follow redirects to get the B2C authorize HTML
+            # 2) Begin sign-in; this should redirect to the Azure B2C authorize HTML
+            resp = await self._session.get(self.URL_SIGNIN, params={"email": email}, allow_redirects=True)
             html = await resp.text()
 
-            # Sometimes the first call returns HTML directly (already on B2C). If it's not HTML,
-            # follow redirects explicitly.
-            if "<!DOCTYPE html" not in html and "<html" not in html.lower():
-                resp2 = await self._session.get(resp.url, allow_redirects=True)
-                html = await resp2.text()
+            if resp.status >= 400:
+                if _looks_like_bot_block(html):
+                    raise MobileLinkAuthError(
+                        "bot_block",
+                        "signin_start",
+                        "Mobile Link blocked the request (bot protection / captcha)",
+                        status=resp.status,
+                        hint="Try again later, or login once in the browser from the same network and retry.",
+                    )
+                b2c = _extract_b2c_error(html)
+                code, hint = _map_b2c_error_to_code(b2c)
+                raise MobileLinkAuthError(
+                    code if code != "unknown" else "signin_start_failed",
+                    "signin_start",
+                    "Failed to start sign-in flow",
+                    status=resp.status,
+                    hint=hint or (b2c if b2c else html[:120] or None),
+                )
 
-            # 3) Extract csrf + tx from B2C page HTML
-            # Observed patterns:
-            #   "csrf":"<token>"
-            #   "transId":"StateProperties=...."
+            if _looks_like_bot_block(html):
+                raise MobileLinkAuthError(
+                    "bot_block",
+                    "signin_start",
+                    "Mobile Link returned a bot-protection / captcha page",
+                    status=resp.status,
+                    hint="This integration cannot solve interactive captchas. Try again later.",
+                )
+
+            # 3) Parse csrf + transaction id from B2C authorize HTML
             m_csrf = re.search(r'"csrf"\s*:\s*"([^"]+)"', html)
             m_tx = re.search(r'"transId"\s*:\s*"([^"]+)"', html)
-
             if not m_csrf or not m_tx:
-                raise MobileLinkAuthError("Failed to parse B2C login page (csrf/transId not found)")
+                b2c = _extract_b2c_error(html)
+                code, hint = _map_b2c_error_to_code(b2c)
+                raise MobileLinkAuthError(
+                    code if code != "unknown" else "parse_failed",
+                    "parse_b2c",
+                    "Could not parse the Azure B2C login page",
+                    status=resp.status,
+                    hint=hint or (b2c if b2c else "csrf/transId not found"),
+                )
 
             csrf_token = m_csrf.group(1)
             tx = m_tx.group(1)
 
             # 4) POST credentials to SelfAsserted endpoint
-            selfasserted = (
-                f"{self.B2C_HOST}/{self.TENANT}/{self.POLICY}/SelfAsserted"
-            )
+            selfasserted = f"{self.B2C_HOST}/{self.TENANT}/{self.POLICY}/SelfAsserted"
             sa_resp = await self._session.post(
                 selfasserted,
                 params={"tx": tx, "p": self.POLICY},
@@ -114,32 +188,79 @@ class MobileLinkApiClient:
                 },
                 headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"},
             )
+            sa_text = await sa_resp.text()
 
-            if sa_resp.status >= 400:
-                raise MobileLinkAuthError(f"Credential submit failed: HTTP {sa_resp.status}")
+            b2c = _extract_b2c_error(sa_text)
+            if sa_resp.status >= 400 or b2c:
+                code, hint = _map_b2c_error_to_code(b2c)
+                # If no B2C code, assume invalid credentials for 4xx
+                if code == "unknown" and sa_resp.status in (400, 401, 403):
+                    code = "invalid_credentials"
+                raise MobileLinkAuthError(
+                    code if code != "unknown" else "credential_submit_failed",
+                    "credential_submit",
+                    "Authentication was rejected",
+                    status=sa_resp.status,
+                    hint=hint or (b2c if b2c else sa_text[:160] or None),
+                )
 
-            # 5) Confirm step (sets cookies and redirects to app callback)
-            confirmed = (
-                f"{self.B2C_HOST}/{self.TENANT}/{self.POLICY}/api/CombinedSigninAndSignup/confirmed"
-            )
+            # 5) Confirm step (sets cookies and redirects back to app callback)
+            confirmed = f"{self.B2C_HOST}/{self.TENANT}/{self.POLICY}/api/CombinedSigninAndSignup/confirmed"
             conf_resp = await self._session.get(
                 confirmed,
                 params={"rememberMe": "false", "csrf_token": csrf_token, "tx": tx, "p": self.POLICY},
                 allow_redirects=True,
             )
+            conf_text = await conf_resp.text()
+
             if conf_resp.status >= 400:
-                raise MobileLinkAuthError(f"Confirm step failed: HTTP {conf_resp.status}")
+                if _looks_like_bot_block(conf_text):
+                    raise MobileLinkAuthError(
+                        "bot_block",
+                        "confirm",
+                        "Blocked during sign-in confirmation (bot protection)",
+                        status=conf_resp.status,
+                    )
+                b2c = _extract_b2c_error(conf_text)
+                code, hint = _map_b2c_error_to_code(b2c)
+                raise MobileLinkAuthError(
+                    code if code != "unknown" else "confirm_failed",
+                    "confirm",
+                    "Failed to complete sign-in confirmation",
+                    status=conf_resp.status,
+                    hint=hint or (b2c if b2c else conf_text[:160] or None),
+                )
 
             # 6) Verify session
             st = await self._session.get(self.URL_ACCOUNT_STATUS)
+            st_text = await st.text()
+
             if st.status != 200:
-                raise MobileLinkAuthError("Login did not establish an authenticated session")
+                if _looks_like_bot_block(st_text):
+                    raise MobileLinkAuthError(
+                        "bot_block",
+                        "account_status",
+                        "Blocked while verifying session (bot protection)",
+                        status=st.status,
+                    )
+                raise MobileLinkAuthError(
+                    "session_not_established",
+                    "account_status",
+                    "Login did not establish an authenticated session",
+                    status=st.status,
+                    hint=st_text[:160] or None,
+                )
 
             self._csrf = csrf_token
             self._tx = tx
 
         except ClientResponseError as e:
-            raise MobileLinkAuthError(str(e)) from e
+            raise MobileLinkAuthError(
+                "http_error",
+                "aiohttp",
+                str(e),
+                status=getattr(e, "status", None),
+            ) from e
 
     async def account_status(self) -> dict[str, Any]:
         resp = await self._session.get(self.URL_ACCOUNT_STATUS)

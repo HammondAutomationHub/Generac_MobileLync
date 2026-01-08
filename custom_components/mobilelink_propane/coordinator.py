@@ -44,7 +44,8 @@ class MobileLinkCoordinator(DataUpdateCoordinator[dict[int, PropaneTank]]):
             return data
 
         except MobileLinkAuthError as e:
-            raise ConfigEntryAuthFailed(str(e)) from e
+            _LOGGER.warning("Mobile Link auth failed during update: %s", f"{e.short()}: {e.detail()}")
+            raise ConfigEntryAuthFailed(e.short()) from e
         except MobileLinkApiError as e:
             raise UpdateFailed(str(e)) from e
         except Exception as e:
