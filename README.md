@@ -1,42 +1,30 @@
 # Mobile Link Propane (Home Assistant)
 
-A Home Assistant custom integration that logs into **Generac Mobile Link** (app.mobilelinkgen.com) and creates sensors for propane tank monitors.
+A Home Assistant custom integration to surface **propane tank level** from **Generac Mobile Link**.
 
-## Features
-- HACS installable
-- Config Flow: prompts for email + password
-- Discovers propane tanks and lets you select which ones to add
-- Options Flow: change selected tanks and which sensors are created
-- Entities per selected tank:
-  - Propane level (%)
-  - Last reading (timestamp) *(optional sensor)*
-  - Capacity (gallons) *(optional sensor)*
-  - Battery level *(optional sensor)*
-  - Device status *(optional sensor)*
-- Extra attributes on propane % sensor include device id/type and last reading.
+## Why cookie-based auth?
+Mobile Link can present interactive bot checks (CAPTCHA) during automated login. This integration avoids headless login and instead uses a **session cookie** you copy from your browser after logging in normally.
 
 ## Install (HACS)
-1. HACS → Integrations → ⋮ → **Custom repositories**
-2. Add your GitHub repo URL, Category: **Integration**
-3. Install **Mobile Link Propane**
-4. Restart Home Assistant
-5. Settings → Devices & services → Add integration → **Mobile Link Propane**
+1. HACS → Integrations → Custom repositories → add this repo (category: Integration)
+2. Install **Mobile Link Propane**
+3. Restart Home Assistant
+4. Settings → Devices & Services → Add Integration → **Mobile Link Propane**
 
-## Notes / Disclaimer
-This integration uses the same web/API endpoints the Mobile Link dashboard uses. API behavior may change without notice.
+## Setup: Get your Cookie header
+1. Sign in at **app.mobilelinkgen.com** in your browser
+2. Open **DevTools → Network**
+3. Click the request to: `/api/v2/Apparatus/list`
+4. In **Request Headers**, copy the full `Cookie:` header value
+5. Paste it into the integration setup
 
-## Debugging
-Enable debug logging:
+If the cookie expires, Home Assistant will prompt you to reauthenticate (paste a fresh cookie).
 
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.mobilelink_propane: debug
-```
-
-## Support
-Open an issue in the repo and include:
-- HA version
-- Integration version
-- Redacted debug log excerpt
+## Entities
+For each selected tank, this integration creates:
+- **Propane %** sensor (always)
+Optional sensors (enable in Options):
+- Last Reading (timestamp)
+- Capacity (gal)
+- Battery (text)
+- Status (text)

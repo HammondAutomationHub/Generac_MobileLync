@@ -10,11 +10,10 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .api import MobileLinkApiClient, MobileLinkAuthError, MobileLinkApiError, PropaneTank
 from .const import (
-    CONF_EMAIL,
-    CONF_PASSWORD,
+    CONF_COOKIE_HEADER,
     CONF_SELECTED_TANKS,
-    DEFAULT_SCAN_INTERVAL_SECONDS,
     DOMAIN,
+    DEFAULT_SCAN_INTERVAL_SECONDS,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,25 +26,34 @@ class MobileLinkCoordinator(DataUpdateCoordinator[dict[int, PropaneTank]]):
 
         super().__init__(
             hass,
-            _LOGGER,
+            logger=_LOGGER,
             name=f"{DOMAIN}-{entry.entry_id}",
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL_SECONDS),
         )
 
+    def _selected_ids(self) -> set[int]:
+        # Prefer options if present, otherwise fall back to entry.data
+        selected = self.entry.options.get(CONF_SELECTED_TANKS, self.entry.data.get(CONF_SELECTED_TANKS, []))
+        try:
+            return {int(x) for x in selected}
+        except Exception:
+            return set()
+
     async def _async_update_data(self) -> dict[int, PropaneTank]:
-        email = self.entry.data[CONF_EMAIL]
-        password = self.entry.data[CONF_PASSWORD]
-        selected = set(self.entry.data.get(CONF_SELECTED_TANKS, []))
+        cookie_header = self.entry.data.get(CONF_COOKIE_HEADER)
+        if not cookie_header:
+            raise ConfigEntryAuthFailed("No cookie header configured")
 
         try:
-            await self.client.login(email, password)
-            tanks = await self.client.discover_propane_tanks()
-            data = {t.apparatus_id: t for t in tanks if not selected or t.apparatus_id in selected}
-            return data
-
+            apparatus = await self.client.get_apparatus_list(cookie_header)
+            tanks = self.client.parse_propane_tanks(apparatus)
+            selected = self._selected_ids()
+            if selected:
+                tanks = [t for t in tanks if t.apparatus_id in selected]
+            return {t.apparatus_id: t for t in tanks}
         except MobileLinkAuthError as e:
-            _LOGGER.warning("Mobile Link auth failed during update: %s", f"{e.short()}: {e.detail()}")
-            raise ConfigEntryAuthFailed(e.short()) from e
+            # Triggers Reauth flow in HA
+            raise ConfigEntryAuthFailed(str(e)) from e
         except MobileLinkApiError as e:
             raise UpdateFailed(str(e)) from e
         except Exception as e:

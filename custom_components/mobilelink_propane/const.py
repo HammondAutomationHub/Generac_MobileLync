@@ -2,8 +2,8 @@ from __future__ import annotations
 
 DOMAIN = "mobilelink_propane"
 
-CONF_EMAIL = "email"
-CONF_PASSWORD = "password"
+# Config entry data
+CONF_COOKIE_HEADER = "cookie_header"
 CONF_SELECTED_TANKS = "selected_tanks"
 
 # Options
@@ -14,4 +14,4 @@ OPT_CREATE_STATUS_SENSOR = "create_status_sensor"
 
 DEFAULT_SCAN_INTERVAL_SECONDS = 300  # 5 minutes
 
-PLATFORMS: list[str] = ["sensor"]
+PLATFORMS = ["sensor"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import voluptuous as vol
@@ -8,224 +9,248 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import selector
 
 from .api import MobileLinkApiClient, MobileLinkAuthError
 from .const import (
-    CONF_EMAIL,
-    CONF_PASSWORD,
-    CONF_SELECTED_TANKS,
     DOMAIN,
-    OPT_CREATE_BATTERY_SENSOR,
-    OPT_CREATE_CAPACITY_SENSOR,
+    CONF_COOKIE_HEADER,
+    CONF_SELECTED_TANKS,
     OPT_CREATE_LAST_READING_SENSOR,
+    OPT_CREATE_CAPACITY_SENSOR,
+    OPT_CREATE_BATTERY_SENSOR,
     OPT_CREATE_STATUS_SENSOR,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
-DEFAULT_OPTIONS = {
-    OPT_CREATE_LAST_READING_SENSOR: False,
-    OPT_CREATE_CAPACITY_SENSOR: False,
-    OPT_CREATE_BATTERY_SENSOR: False,
-    OPT_CREATE_STATUS_SENSOR: False,
-}
+
+STEP_COOKIE_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_COOKIE_HEADER): str,
+    }
+)
 
 
-async def _login_and_discover(hass: HomeAssistant, email: str, password: str):
+def _tank_select_schema(tank_map: dict[str, str]) -> vol.Schema:
+    return vol.Schema({vol.Required(CONF_SELECTED_TANKS): vol.In(tank_map, multiple=True)})
+
+
+OPTIONS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(OPT_CREATE_LAST_READING_SENSOR, default=False): bool,
+        vol.Optional(OPT_CREATE_CAPACITY_SENSOR, default=False): bool,
+        vol.Optional(OPT_CREATE_BATTERY_SENSOR, default=False): bool,
+        vol.Optional(OPT_CREATE_STATUS_SENSOR, default=False): bool,
+    }
+)
+
+
+
+def _extract_cookie_value(cookie_input: str) -> str:
+    """Extract the cookie header value from a pasted string.
+
+    Accepts any of:
+    - raw cookie value: "a=b; c=d"
+    - a header line: "Cookie: a=b; c=d"
+    - a full header block that includes a Cookie line
+    - a curl command containing -H 'Cookie: ...'
+    """
+    raw = (cookie_input or "").strip()
+
+    # If user pasted a curl command, extract the Cookie header inside -H / --header
+    m = re.search(r"(?:-H|--header)\s+['\"]?Cookie\s*:\s*([^'\"\n\r]+)['\"]?", raw, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+
+    # If user pasted a header block, find the Cookie: line
+    m = re.search(r"^Cookie\s*:\s*(.+)$", raw, re.IGNORECASE | re.MULTILINE)
+    if m:
+        return m.group(1).strip()
+
+    # If user pasted a request headers section that contains "cookie:" in the middle
+    m = re.search(r"\bcookie\s*:\s*([^\n\r]+)", raw, re.IGNORECASE)
+    if m:
+        return m.group(1).strip()
+
+    # Otherwise assume they pasted the cookie value
+    return raw.strip(" \t\r\n\"'")
+
+
+async def _fetch_tanks(hass: HomeAssistant, cookie_header: str) -> dict[str, str]:
     client = MobileLinkApiClient(hass)
-    await client.login(email, password)
-    tanks = await client.discover_propane_tanks()
-    return tanks
+    apparatus = await client.get_apparatus_list(cookie_header)
+    tanks = client.parse_propane_tanks(apparatus)
+    # Map id->name (string keys for vol.In)
+    return {str(t.apparatus_id): t.name for t in tanks}
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
-        self._email: str | None = None
-        self._password: str | None = None
-        self._tanks: dict[int, str] = {}
-        self._last_error_detail: str = ""
+        self._cookie_header: str | None = None
+        self._tank_map: dict[str, str] | None = None
+        self._error_detail: str | None = None
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            email = user_input[CONF_EMAIL].strip()
-            password = user_input[CONF_PASSWORD]
-
+            cookie_header = _extract_cookie_value(user_input[CONF_COOKIE_HEADER])
             try:
-                tanks = await _login_and_discover(self.hass, email, password)
-            except MobileLinkAuthError as e:
-                # Map structured auth errors to user-facing reasons, and log details for troubleshooting.
-                self._last_error_detail = f"{e.short()}: {e.detail()}"
-                _LOGGER.warning("Mobile Link login failed: %s", self._last_error_detail)
-
-                code = getattr(e, "code", "unknown")
-                if code in ("invalid_credentials",):
-                    errors["base"] = "invalid_auth"
-                elif code in ("password_reset_required",):
-                    errors["base"] = "password_reset_required"
-                elif code in ("account_locked",):
-                    errors["base"] = "account_locked"
-                elif code in ("bot_block",):
-                    errors["base"] = "bot_block"
-                elif code in ("access_denied",):
-                    errors["base"] = "access_denied"
+                tank_map = await _fetch_tanks(self.hass, cookie_header)
+                if not tank_map:
+                    self._error_detail = "No propane tanks were found in your account."
+                    errors["base"] = "no_tanks"
                 else:
-                    errors["base"] = "cannot_connect"
+                    self._cookie_header = cookie_header
+                    self._tank_map = tank_map
+                    await self.async_set_unique_id(f"mobilelink_cookie_{hash(cookie_header)}")
+                    return await self.async_step_select_tanks()
+            except MobileLinkAuthError as e:
+                self._error_detail = str(e)
+                errors["base"] = "invalid_cookie"
             except Exception as e:
-                self._last_error_detail = f"unexpected: {e}"
-                _LOGGER.exception("Unexpected error during Mobile Link login/discovery")
+                self._error_detail = str(e)
                 errors["base"] = "cannot_connect"
-            else:
-                self._email = email
-                self._password = password
-                self._tanks = {t.apparatus_id: t.name for t in tanks}
 
-                await self.async_set_unique_id(email.lower())
-                self._abort_if_unique_id_configured()
+        description_placeholders = {"error_detail": self._error_detail or ""}
 
-                return await self.async_step_select_tanks()
-
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_EMAIL): str,
-                vol.Required(CONF_PASSWORD): str,
-            }
+        return self.async_show_form(
+            step_id="user",
+            data_schema=STEP_COOKIE_SCHEMA,
+            errors=errors,
+            description_placeholders=description_placeholders,
         )
-        return self.async_show_form(step_id="user", data_schema=schema, errors=errors, description_placeholders={"error_detail": self._last_error_detail})
 
     async def async_step_select_tanks(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        if not self._tanks:
-            return self.async_abort(reason="no_tanks")
+        errors: dict[str, str] = {}
+        assert self._cookie_header is not None
+        assert self._tank_map is not None
 
         if user_input is not None:
             selected = [int(x) for x in user_input[CONF_SELECTED_TANKS]]
-            return self.async_create_entry(
-                title=f"Mobile Link ({self._email})",
-                data={
-                    CONF_EMAIL: self._email,
-                    CONF_PASSWORD: self._password,
-                    CONF_SELECTED_TANKS: selected,
-                },
-                options=DEFAULT_OPTIONS.copy(),
-            )
-
-        tank_options = [
-            selector.SelectOptionDict(value=str(k), label=v) for k, v in sorted(self._tanks.items(), key=lambda kv: kv[1].lower())
-        ]
-
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_SELECTED_TANKS): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=tank_options,
-                        multiple=True,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                )
+            data = {
+                CONF_COOKIE_HEADER: self._cookie_header,
+                CONF_SELECTED_TANKS: selected,
             }
+            # Default options: all optional sensors off
+            options = {
+                OPT_CREATE_LAST_READING_SENSOR: False,
+                OPT_CREATE_CAPACITY_SENSOR: False,
+                OPT_CREATE_BATTERY_SENSOR: False,
+                OPT_CREATE_STATUS_SENSOR: False,
+                CONF_SELECTED_TANKS: selected,
+            }
+            return self.async_create_entry(title="Mobile Link Propane", data=data, options=options)
+
+        return self.async_show_form(
+            step_id="select_tanks",
+            data_schema=_tank_select_schema(self._tank_map),
+            errors=errors,
         )
-        return self.async_show_form(step_id="select_tanks", data_schema=schema)
 
     async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        """Handle re-authentication when credentials expire/change."""
-        self._email = self.context.get("unique_id")
+        self._error_detail = "Your Mobile Link session cookie is invalid or expired. Paste a fresh cookie header."
         return await self.async_step_reauth_confirm(user_input)
 
     async def async_step_reauth_confirm(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         errors: dict[str, str] = {}
-
         if user_input is not None:
-            password = user_input[CONF_PASSWORD]
+            cookie_header = _extract_cookie_value(user_input[CONF_COOKIE_HEADER])
             try:
-                # Try login only
-                client = MobileLinkApiClient(self.hass)
-                await client.login(self._email, password)
-            except MobileLinkAuthError:
-                errors["base"] = "invalid_auth"
-            except Exception:
+                tank_map = await _fetch_tanks(self.hass, cookie_header)
+                if not tank_map:
+                    self._error_detail = "No propane tanks were found in your account."
+                    errors["base"] = "no_tanks"
+                else:
+                    entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+                    assert entry is not None
+                    self.hass.config_entries.async_update_entry(
+                        entry,
+                        data={**entry.data, CONF_COOKIE_HEADER: cookie_header},
+                    )
+                    await self.hass.config_entries.async_reload(entry.entry_id)
+                    return self.async_abort(reason="reauth_successful")
+            except MobileLinkAuthError as e:
+                self._error_detail = str(e)
+                errors["base"] = "invalid_cookie"
+            except Exception as e:
+                self._error_detail = str(e)
                 errors["base"] = "cannot_connect"
-            else:
-                entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-                assert entry is not None
-                self.hass.config_entries.async_update_entry(
-                    entry,
-                    data={**entry.data, CONF_PASSWORD: password},
-                )
-                await self.hass.config_entries.async_reload(entry.entry_id)
-                return self.async_abort(reason="reauth_successful")
 
-        schema = vol.Schema({vol.Required(CONF_PASSWORD): str})
-        return self.async_show_form(step_id="reauth_confirm", data_schema=schema, errors=errors)
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=STEP_COOKIE_SCHEMA,
+            errors=errors,
+            description_placeholders={"error_detail": self._error_detail or ""},
+        )
+
+    @staticmethod
+    @config_entries.callback
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+        return OptionsFlowHandler(config_entry)
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self.config_entry = config_entry
-        self._tanks: dict[int, str] = {}
-        self._last_error_detail: str = ""
+        self._tank_map: dict[str, str] | None = None
+        self._error_detail: str | None = None
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
-        return await self.async_step_select()
+    async def async_step_init(self, user_input=None) -> FlowResult:
+        # Step 1: refresh tank list using current cookie
+        cookie_header = self.config_entry.data.get(CONF_COOKIE_HEADER, "")
+        try:
+            self._tank_map = await _fetch_tanks(self.hass, cookie_header)
+        except Exception as e:
+            _LOGGER.warning("Failed to refresh tank list for options: %s", e)
+            self._tank_map = None
 
-    async def async_step_select(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        return await self.async_step_select_tanks()
+
+    async def async_step_select_tanks(self, user_input=None) -> FlowResult:
         errors: dict[str, str] = {}
 
-        email = self.config_entry.data[CONF_EMAIL]
-        password = self.config_entry.data[CONF_PASSWORD]
-        current_selected = self.config_entry.data.get(CONF_SELECTED_TANKS, [])
+        tank_map = self._tank_map
+        if not tank_map:
+            # If we couldn't refresh, fall back to stored IDs
+            current = self.config_entry.options.get(CONF_SELECTED_TANKS, self.config_entry.data.get(CONF_SELECTED_TANKS, []))
+            tank_map = {str(i): f"Tank {i}" for i in current} or {"0": "No tanks found"}
 
         if user_input is not None:
-            # update options toggles + selected tanks
             selected = [int(x) for x in user_input[CONF_SELECTED_TANKS]]
+            # move to sensor toggles
+            self._selected = selected
+            return await self.async_step_sensors()
 
-            # update entry data for selected tanks
-            self.hass.config_entries.async_update_entry(
-                self.config_entry,
-                data={**self.config_entry.data, CONF_SELECTED_TANKS: selected},
-                options={
-                    OPT_CREATE_LAST_READING_SENSOR: user_input.get(OPT_CREATE_LAST_READING_SENSOR, False),
-                    OPT_CREATE_CAPACITY_SENSOR: user_input.get(OPT_CREATE_CAPACITY_SENSOR, False),
-                    OPT_CREATE_BATTERY_SENSOR: user_input.get(OPT_CREATE_BATTERY_SENSOR, False),
-                    OPT_CREATE_STATUS_SENSOR: user_input.get(OPT_CREATE_STATUS_SENSOR, False),
-                },
-            )
-            await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-            return self.async_create_entry(title="", data={})
-
-        # Discover tanks fresh so the list is always current
-        try:
-            tanks = await _login_and_discover(self.hass, email, password)
-            self._tanks = {t.apparatus_id: t.name for t in tanks}
-        except MobileLinkAuthError:
-            errors["base"] = "invalid_auth"
-        except Exception:
-            errors["base"] = "cannot_connect"
-
-        tank_options = [
-            selector.SelectOptionDict(value=str(k), label=v) for k, v in sorted(self._tanks.items(), key=lambda kv: kv[1].lower())
-        ]
-
+        current_selected = self.config_entry.options.get(CONF_SELECTED_TANKS, self.config_entry.data.get(CONF_SELECTED_TANKS, []))
         schema = vol.Schema(
             {
-                vol.Required(CONF_SELECTED_TANKS, default=[str(x) for x in current_selected]): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=tank_options,
-                        multiple=True,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional(OPT_CREATE_LAST_READING_SENSOR, default=self.config_entry.options.get(OPT_CREATE_LAST_READING_SENSOR, False)): bool,
-                vol.Optional(OPT_CREATE_CAPACITY_SENSOR, default=self.config_entry.options.get(OPT_CREATE_CAPACITY_SENSOR, False)): bool,
-                vol.Optional(OPT_CREATE_BATTERY_SENSOR, default=self.config_entry.options.get(OPT_CREATE_BATTERY_SENSOR, False)): bool,
-                vol.Optional(OPT_CREATE_STATUS_SENSOR, default=self.config_entry.options.get(OPT_CREATE_STATUS_SENSOR, False)): bool,
+                vol.Required(CONF_SELECTED_TANKS, default=[str(i) for i in current_selected]): vol.In(tank_map, multiple=True),
             }
         )
-        return self.async_show_form(step_id="select", data_schema=schema, errors=errors)
+        return self.async_show_form(step_id="select_tanks", data_schema=schema, errors=errors)
 
+    async def async_step_sensors(self, user_input=None) -> FlowResult:
+        errors: dict[str, str] = {}
+        defaults = {
+            OPT_CREATE_LAST_READING_SENSOR: self.config_entry.options.get(OPT_CREATE_LAST_READING_SENSOR, False),
+            OPT_CREATE_CAPACITY_SENSOR: self.config_entry.options.get(OPT_CREATE_CAPACITY_SENSOR, False),
+            OPT_CREATE_BATTERY_SENSOR: self.config_entry.options.get(OPT_CREATE_BATTERY_SENSOR, False),
+            OPT_CREATE_STATUS_SENSOR: self.config_entry.options.get(OPT_CREATE_STATUS_SENSOR, False),
+        }
+        schema = vol.Schema(
+            {
+                vol.Optional(OPT_CREATE_LAST_READING_SENSOR, default=defaults[OPT_CREATE_LAST_READING_SENSOR]): bool,
+                vol.Optional(OPT_CREATE_CAPACITY_SENSOR, default=defaults[OPT_CREATE_CAPACITY_SENSOR]): bool,
+                vol.Optional(OPT_CREATE_BATTERY_SENSOR, default=defaults[OPT_CREATE_BATTERY_SENSOR]): bool,
+                vol.Optional(OPT_CREATE_STATUS_SENSOR, default=defaults[OPT_CREATE_STATUS_SENSOR]): bool,
+            }
+        )
 
-async def async_get_options_flow(config_entry: config_entries.ConfigEntry):
-    return OptionsFlowHandler(config_entry)
+        if user_input is not None:
+            options = {**user_input, CONF_SELECTED_TANKS: getattr(self, "_selected", [])}
+            return self.async_create_entry(title="", data=options)
+
+        return self.async_show_form(step_id="sensors", data_schema=schema, errors=errors)

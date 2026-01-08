@@ -3,50 +3,50 @@
     "step": {
       "user": {
         "title": "Mobile Link Propane",
-        "description": "Sign in with your Generac Mobile Link account.\n\n{error_detail}",
+        "description": "Paste your authenticated Mobile Link cookie.\n\nYou can paste ANY of these:\n• The raw cookie value (looks like: a=b; c=d)\n• A single header line (Cookie: a=b; c=d)\n• An entire Request Headers block copied from DevTools\n• A curl command that includes -H 'Cookie: ...'\n\nHow to get it:\n1) Log in to app.mobilelinkgen.com in a browser (complete any CAPTCHA).\n2) Open DevTools → Network.\n3) Click the request to /api/v2/Apparatus/list.\n4) In Request Headers, copy the Cookie header (or copy all headers) and paste it here.\n\nTip: Cookies expire. If it stops working, reauth and paste a fresh cookie.",
         "data": {
-          "email": "Email",
-          "password": "Password"
+          "cookie_header": "Cookie / headers"
         }
       },
       "select_tanks": {
         "title": "Select propane tanks",
-        "description": "Choose which tanks to add to Home Assistant.",
+        "description": "Choose which propane tanks to add to Home Assistant.",
         "data": {
           "selected_tanks": "Tanks"
         }
       },
       "reauth_confirm": {
-        "title": "Re-authenticate",
-        "description": "Your Mobile Link session expired. Please re-enter your password.",
+        "title": "Reauthenticate",
+        "description": "Your session cookie is invalid or expired. Paste a fresh cookie header. {error_detail}",
         "data": {
-          "password": "Password"
+          "cookie_header": "Cookie header"
         }
       }
     },
     "error": {
       "cannot_connect": "Failed to connect.",
-      "invalid_auth": "Invalid authentication.",
-      "password_reset_required": "Password reset required for this account. Reset it in the Mobile Link app/website, then try again.",
-      "account_locked": "Account appears locked/disabled. Try again later or unlock via Mobile Link support.",
-      "bot_block": "Mobile Link returned a bot-protection/captcha page. Try again later or from a different network.",
-      "access_denied": "Access was denied by the sign-in service."
+      "invalid_cookie": "Cookie header is invalid or expired.",
+      "no_tanks": "No propane tanks were found for this account."
     },
     "abort": {
-      "already_configured": "Account is already configured.",
-      "no_tanks": "No propane tanks were found on this account.",
-      "reauth_successful": "Re-authentication successful."
+      "reauth_successful": "Re-authentication was successful."
     }
   },
   "options": {
     "step": {
-      "select": {
-        "title": "Mobile Link Propane options",
-        "description": "Select tanks and which additional sensors to create.",
+      "select_tanks": {
+        "title": "Select propane tanks",
+        "description": "Choose which propane tanks to keep in Home Assistant.",
         "data": {
-          "selected_tanks": "Tanks",
-          "create_last_reading_sensor": "Create Last Reading sensor",
-          "create_capacity_sensor": "Create Capacity sensor",
+          "selected_tanks": "Tanks"
+        }
+      },
+      "sensors": {
+        "title": "Optional sensors",
+        "description": "Enable additional sensors for each tank.",
+        "data": {
+          "create_last_reading_sensor": "Create Last Reading timestamp sensor",
+          "create_capacity_sensor": "Create Capacity (gal) sensor",
           "create_battery_sensor": "Create Battery sensor",
           "create_status_sensor": "Create Status sensor"
         }
