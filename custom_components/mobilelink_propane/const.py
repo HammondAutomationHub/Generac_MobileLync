@@ -4,6 +4,7 @@ DOMAIN = "mobilelink_propane"
 
 # Config entry data
 CONF_COOKIE_HEADER = "cookie_header"
+CONF_USERNAME = "username"
 CONF_SELECTED_TANKS = "selected_tanks"
 
 # Options

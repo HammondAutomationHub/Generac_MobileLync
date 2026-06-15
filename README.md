@@ -1,30 +1,41 @@
-# Mobile Link Propane (Home Assistant)
+# Generac Mobile Link Propane Monitor
 
-A Home Assistant custom integration to surface **propane tank level** from **Generac Mobile Link**.
+A Home Assistant custom integration to monitor **Generac propane tank levels** and generator status via Mobile Link.
 
-## Why cookie-based auth?
-Mobile Link can present interactive bot checks (CAPTCHA) during automated login. This integration avoids headless login and instead uses a **session cookie** you copy from your browser after logging in normally.
+## Features
 
-## Install (HACS)
-1. HACS → Integrations → Custom repositories → add this repo (category: Integration)
-2. Install **Mobile Link Propane**
-3. Restart Home Assistant
-4. Settings → Devices & Services → Add Integration → **Mobile Link Propane**
+- Monitors propane tank levels (percentage and gallons)
+- Generator status and runtime tracking
+- Battery voltage monitoring
+- Multiple tank support
+- Automatic detection of expired sessions with guided renewal
+- Clean re-authentication flow
 
-## Setup: Get your Cookie header
-1. Sign in at **app.mobilelinkgen.com** in your browser
-2. Open **DevTools → Network**
-3. Click the request to: `/api/v2/Apparatus/list`
-4. In **Request Headers**, copy the full `Cookie:` header value
-5. Paste it into the integration setup
+## Setup Instructions
 
-If the cookie expires, Home Assistant will prompt you to reauthenticate (paste a fresh cookie).
+### Step 1: Install the Integration
 
-## Entities
-For each selected tank, this integration creates:
-- **Propane %** sensor (always)
-Optional sensors (enable in Options):
-- Last Reading (timestamp)
-- Capacity (gal)
-- Battery (text)
-- Status (text)
+1. Copy the `mobilelink_propane` folder into your Home Assistant `custom_components` directory.
+2. Restart Home Assistant.
+3. Go to **Settings → Devices & Services → Add Integration** and search for **"Generac Mobile Link Propane"**.
+
+### Step 2: Initial Configuration
+
+1. Enter your **Mobile Link username** (email).
+2. Click **Submit**.
+3. Follow the guided instructions:
+   - Open the Mobile Link login page.
+   - Log in normally in your browser (handle CAPTCHA).
+   - Copy the full **Cookie** header from Developer Tools (Network tab).
+   - Paste it back into Home Assistant.
+
+## When Your Cookie Expires
+
+The integration automatically detects expired cookies and shows a **persistent notification** with a direct link to the renewal flow.
+
+## Important Notes
+
+- Due to Generac's anti-bot protections, this guided cookie method is the most reliable approach.
+- Cookies usually last several weeks to months.
+
+Enjoy monitoring your propane levels! ⛽
