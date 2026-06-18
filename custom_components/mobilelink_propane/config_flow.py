@@ -13,18 +13,24 @@ from homeassistant.helpers import selector
 from .api import MobileLinkApiClient, MobileLinkAuthError, MobileLinkApiError
 from .const import (
     CONF_COOKIE_HEADER,
+    CONF_COOKIE_UPDATED_AT,
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_SELECTED_TANKS,
     CONF_USERNAME,
+    DEFAULT_COOKIE_LIFETIME_DAYS,
+    DEFAULT_COOKIE_WARN_DAYS,
     DEFAULT_OPTIONS,
     DOMAIN,
     LOGIN_URL,
+    OPT_COOKIE_LIFETIME_DAYS,
+    OPT_COOKIE_WARN_DAYS,
     OPT_CREATE_BATTERY_SENSOR,
     OPT_CREATE_CAPACITY_SENSOR,
     OPT_CREATE_LAST_READING_SENSOR,
     OPT_CREATE_STATUS_SENSOR,
 )
+from .session import cookie_stored_at_iso
 from .util import cookie_diagnostics, cookie_looks_incomplete, normalize_cookie_header
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,7 +69,7 @@ def _auth_error_key(err: MobileLinkAuthError) -> str:
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Mobile Link Propane."""
 
-    VERSION = 3
+    VERSION = 4
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Collect the Mobile Link username."""
@@ -152,6 +158,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={
                         CONF_COOKIE_HEADER: self.context["cookie"],
                         CONF_USERNAME: self.context.get("username"),
+                        CONF_COOKIE_UPDATED_AT: cookie_stored_at_iso(),
                     },
                     options={
                         CONF_SELECTED_TANKS: selected,
@@ -202,7 +209,11 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     if entry is not None:
                         return self.async_update_reload_and_abort(
                             entry,
-                            data={**entry.data, CONF_COOKIE_HEADER: cookie},
+                            data={
+                                **entry.data,
+                                CONF_COOKIE_HEADER: cookie,
+                                CONF_COOKIE_UPDATED_AT: cookie_stored_at_iso(),
+                            },
                         )
 
         return self.async_show_form(
@@ -235,27 +246,32 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         cls, hass: HomeAssistant, config_entry: config_entries.ConfigEntry
     ) -> bool:
         """Migrate older config entry schemas."""
-        if config_entry.version >= 3:
-            return True
-
         data = dict(config_entry.data)
         options = dict(config_entry.options)
+        version = config_entry.version
 
-        if CONF_EMAIL in data:
-            data[CONF_USERNAME] = data.pop(CONF_EMAIL)
-        data.pop(CONF_PASSWORD, None)
+        if version < 3:
+            if CONF_EMAIL in data:
+                data[CONF_USERNAME] = data.pop(CONF_EMAIL)
+            data.pop(CONF_PASSWORD, None)
 
-        if CONF_SELECTED_TANKS in data:
-            options.setdefault(CONF_SELECTED_TANKS, data.pop(CONF_SELECTED_TANKS))
+            if CONF_SELECTED_TANKS in data:
+                options.setdefault(CONF_SELECTED_TANKS, data.pop(CONF_SELECTED_TANKS))
+
+        if version < 4:
+            data.setdefault(CONF_COOKIE_UPDATED_AT, cookie_stored_at_iso())
 
         for key, default in DEFAULT_OPTIONS.items():
             options.setdefault(key, default)
+
+        if version >= 4:
+            return True
 
         hass.config_entries.async_update_entry(
             config_entry,
             data=data,
             options=options,
-            version=3,
+            version=4,
         )
         return True
 
@@ -291,6 +307,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         OPT_CREATE_STATUS_SENSOR: user_input.get(
                             OPT_CREATE_STATUS_SENSOR, False
                         ),
+                        OPT_COOKIE_LIFETIME_DAYS: user_input[OPT_COOKIE_LIFETIME_DAYS],
+                        OPT_COOKIE_WARN_DAYS: user_input[OPT_COOKIE_WARN_DAYS],
                     },
                 )
 
@@ -338,6 +356,34 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         OPT_CREATE_STATUS_SENSOR,
                         default=self.config_entry.options.get(OPT_CREATE_STATUS_SENSOR, False),
                     ): bool,
+                    vol.Required(
+                        OPT_COOKIE_LIFETIME_DAYS,
+                        default=self.config_entry.options.get(
+                            OPT_COOKIE_LIFETIME_DAYS, DEFAULT_COOKIE_LIFETIME_DAYS
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=7,
+                            max=90,
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                            unit_of_measurement="days",
+                        )
+                    ),
+                    vol.Required(
+                        OPT_COOKIE_WARN_DAYS,
+                        default=self.config_entry.options.get(
+                            OPT_COOKIE_WARN_DAYS, DEFAULT_COOKIE_WARN_DAYS
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=1,
+                            max=14,
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                            unit_of_measurement="days",
+                        )
+                    ),
                 }
             ),
             errors=errors,

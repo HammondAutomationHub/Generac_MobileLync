@@ -47,13 +47,15 @@
     "step": {
       "init": {
         "title": "Mobile Link options",
-        "description": "Choose which tanks to monitor and which optional sensors to create.",
+        "description": "Choose which tanks to monitor, optional sensors, and cookie refresh reminder settings.",
         "data": {
           "selected_tanks": "Tanks",
           "create_last_reading_sensor": "Create last reading sensor",
           "create_capacity_sensor": "Create capacity sensor",
           "create_battery_sensor": "Create battery sensor",
-          "create_status_sensor": "Create connection status sensor"
+          "create_status_sensor": "Create connection status sensor",
+          "cookie_lifetime_days": "Estimated cookie lifetime",
+          "cookie_warn_days": "Warn before expiry"
         }
       }
     },
@@ -85,6 +87,17 @@
       },
       "status": {
         "name": "Status"
+      },
+      "cookie_age": {
+        "name": "Cookie age"
+      },
+      "cookie_refresh_by": {
+        "name": "Cookie refresh by"
+      }
+    },
+    "binary_sensor": {
+      "cookie_refresh_due": {
+        "name": "Cookie refresh due"
       }
     }
   }

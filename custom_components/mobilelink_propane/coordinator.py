@@ -16,6 +16,12 @@ from .const import (
     DOMAIN,
     DEFAULT_SCAN_INTERVAL_SECONDS,
     NOTIFICATION_ID_AUTH,
+    NOTIFICATION_ID_COOKIE_WARN,
+)
+from .session import (
+    cookie_warn_at,
+    estimated_cookie_expiry,
+    is_cookie_refresh_due,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,10 +58,17 @@ class MobileLinkCoordinator(DataUpdateCoordinator[dict[int, PropaneTank]]):
                 _LOGGER.warning("Ignoring invalid selected tank id: %r", value)
         return selected_ids
 
+    def _cookie_warn_notification_id(self) -> str:
+        return f"{NOTIFICATION_ID_COOKIE_WARN}_{self.entry.entry_id}"
+
     def _dismiss_auth_notification(self) -> None:
         persistent_notification.async_dismiss(self.hass, self._notification_id())
 
+    def _dismiss_cookie_warn_notification(self) -> None:
+        persistent_notification.async_dismiss(self.hass, self._cookie_warn_notification_id())
+
     def _notify_auth_expired(self) -> None:
+        self._dismiss_cookie_warn_notification()
         persistent_notification.async_create(
             self.hass,
             (
@@ -66,6 +79,27 @@ class MobileLinkCoordinator(DataUpdateCoordinator[dict[int, PropaneTank]]):
             title="Mobile Link session expired",
             notification_id=self._notification_id(),
         )
+
+    def _notify_cookie_refresh_due(self) -> None:
+        expiry = estimated_cookie_expiry(self.entry)
+        warn_at = cookie_warn_at(self.entry)
+        persistent_notification.async_create(
+            self.hass,
+            (
+                "Your Mobile Link cookie may expire soon. Open **Settings → Devices & Services**, "
+                "select **Generac Mobile Link Propane**, and choose **Reconfigure** to paste a "
+                f"fresh cookie before the estimated expiry on **{expiry.strftime('%Y-%m-%d')}**. "
+                f"The warning window started on **{warn_at.strftime('%Y-%m-%d')}**."
+            ),
+            title="Mobile Link cookie refresh recommended",
+            notification_id=self._cookie_warn_notification_id(),
+        )
+
+    def _update_cookie_warn_notification(self) -> None:
+        if is_cookie_refresh_due(self.entry):
+            self._notify_cookie_refresh_due()
+        else:
+            self._dismiss_cookie_warn_notification()
 
     async def _async_update_data(self) -> dict[int, PropaneTank]:
         cookie_header = self.entry.data.get(CONF_COOKIE_HEADER)
@@ -80,6 +114,7 @@ class MobileLinkCoordinator(DataUpdateCoordinator[dict[int, PropaneTank]]):
             if selected:
                 tanks = [tank for tank in tanks if tank.apparatus_id in selected]
             self._dismiss_auth_notification()
+            self._update_cookie_warn_notification()
             return {tank.apparatus_id: tank for tank in tanks}
         except MobileLinkAuthError as err:
             self._notify_auth_expired()

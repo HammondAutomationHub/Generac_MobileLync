@@ -159,6 +159,41 @@ def test_cookie_diagnostics_reports_aspnet_parts() -> None:
     assert ".AspNetCore.CookiesC2" in summary
 
 
+def test_session_cookie_refresh_window() -> None:
+    from types import SimpleNamespace
+
+    homeassistant_util_dt = types.ModuleType("homeassistant.util.dt")
+    homeassistant_util = types.ModuleType("homeassistant.util")
+    homeassistant_util.dt = homeassistant_util_dt
+    sys.modules["homeassistant.util"] = homeassistant_util
+    sys.modules["homeassistant.util.dt"] = homeassistant_util_dt
+
+    def _parse_datetime(value: str) -> datetime:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+    homeassistant_util_dt.parse_datetime = _parse_datetime
+    homeassistant_util_dt.now = lambda: datetime(2026, 6, 18, 12, 0, 0)
+
+    from session import (  # noqa: E402
+        cookie_age_days,
+        cookie_warn_at,
+        estimated_cookie_expiry,
+        is_cookie_refresh_due,
+    )
+
+    entry = SimpleNamespace(
+        data={"cookie_updated_at": "2026-06-01T12:00:00"},
+        options={"cookie_lifetime_days": 30, "cookie_warn_days": 3},
+    )
+    now = datetime(2026, 6, 27, 12, 0, 0)
+
+    assert cookie_age_days(entry, now=now) == 26.0
+    assert estimated_cookie_expiry(entry) == datetime(2026, 7, 1, 12, 0, 0)
+    assert cookie_warn_at(entry) == datetime(2026, 6, 28, 12, 0, 0)
+    assert is_cookie_refresh_due(entry, now=datetime(2026, 6, 27, 12, 0, 0)) is False
+    assert is_cookie_refresh_due(entry, now=datetime(2026, 6, 28, 12, 0, 0)) is True
+
+
 def test_parse_propane_tanks_from_har_shape() -> None:
     tanks = MobileLinkApiClient.parse_propane_tanks([HAR_PROPANE_APPARATUS])
 

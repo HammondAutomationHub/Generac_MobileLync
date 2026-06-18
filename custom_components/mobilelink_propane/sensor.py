@@ -21,6 +21,14 @@ from .const import (
     OPT_CREATE_STATUS_SENSOR,
 )
 from .coordinator import MobileLinkCoordinator
+from .session import (
+    cookie_age_days,
+    cookie_lifetime_days,
+    cookie_updated_at,
+    cookie_warn_at,
+    cookie_warn_days,
+    estimated_cookie_expiry,
+)
 
 
 def _selected_tank_ids(entry: ConfigEntry, coordinator: MobileLinkCoordinator) -> list[int]:
@@ -51,7 +59,10 @@ async def async_setup_entry(
     create_battery = entry.options.get(OPT_CREATE_BATTERY_SENSOR, False)
     create_status = entry.options.get(OPT_CREATE_STATUS_SENSOR, False)
 
-    entities: list[SensorEntity] = []
+    entities: list[SensorEntity] = [
+        MobileLinkCookieAgeSensor(coordinator),
+        MobileLinkCookieRefreshBySensor(coordinator),
+    ]
     for apparatus_id in selected_ids:
         entities.append(MobileLinkPropanePercentSensor(coordinator, apparatus_id))
 
@@ -65,6 +76,64 @@ async def async_setup_entry(
             entities.append(MobileLinkPropaneStatusSensor(coordinator, apparatus_id))
 
     async_add_entities(entities, update_before_add=True)
+
+
+class _ServiceSensor(CoordinatorEntity[MobileLinkCoordinator], SensorEntity):
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: MobileLinkCoordinator) -> None:
+        super().__init__(coordinator)
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.entry.entry_id)},
+        )
+
+    @property
+    def available(self) -> bool:
+        return True
+
+
+class MobileLinkCookieAgeSensor(_ServiceSensor):
+    _attr_translation_key = "cookie_age"
+    _attr_native_unit_of_measurement = "d"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:cookie-clock"
+
+    def __init__(self, coordinator: MobileLinkCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"mobilelink_propane_{coordinator.entry.entry_id}_cookie_age_days"
+
+    @property
+    def native_value(self) -> float:
+        return cookie_age_days(self.coordinator.entry)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | int]:
+        entry = self.coordinator.entry
+        return {
+            "cookie_updated_at": cookie_updated_at(entry).isoformat(),
+            "estimated_expiry": estimated_cookie_expiry(entry).isoformat(),
+            "warn_at": cookie_warn_at(entry).isoformat(),
+            "estimated_lifetime_days": cookie_lifetime_days(entry),
+            "warn_days_before_expiry": cookie_warn_days(entry),
+        }
+
+
+class MobileLinkCookieRefreshBySensor(_ServiceSensor):
+    _attr_translation_key = "cookie_refresh_by"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:cookie-alert"
+
+    def __init__(self, coordinator: MobileLinkCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"mobilelink_propane_{coordinator.entry.entry_id}_cookie_refresh_by"
+
+    @property
+    def native_value(self):
+        return estimated_cookie_expiry(self.coordinator.entry)
 
 
 class _BaseTankSensor(CoordinatorEntity[MobileLinkCoordinator], SensorEntity):

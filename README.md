@@ -9,6 +9,7 @@ A Home Assistant custom integration to monitor **Generac propane tank levels** v
 - Optional diagnostic sensors for last reading, capacity, battery, and connection status
 - Cookie-based authentication that works with Generac's anti-bot protections
 - Automatic session expiry detection with persistent notification and guided re-authentication
+- Proactive cookie refresh reminders with configurable estimated lifetime
 - Options reload automatically when you change tanks or sensor settings
 - Generac branding in Home Assistant (integration icon and device pages)
 
@@ -141,12 +142,49 @@ Paste into the integration setup screen and submit. The integration will call `/
 
 ## When Your Cookie Expires
 
-Cookies typically last several weeks to months. When a session expires:
+Mobile Link does not expose an exact session expiry time. This integration estimates it from when you last pasted the cookie.
+
+### After expiry
+
+When a session actually expires:
 
 - The integration shows a **persistent notification** in Home Assistant.
 - The integration card offers **Reconfigure** to paste a fresh cookie.
 
 Use the same `/api/v2/Apparatus/list` steps above when re-authenticating.
+
+### Proactive refresh reminder (v2.2.0+)
+
+Before the estimated expiry, the integration can warn you early:
+
+| Entity | Purpose |
+|--------|---------|
+| `sensor.*_cookie_age` | Days since the cookie was last updated |
+| `sensor.*_cookie_refresh_by` | Estimated refresh-by timestamp |
+| `binary_sensor.*_cookie_refresh_due` | Turns on when inside the warning window |
+
+Defaults:
+
+- **Estimated cookie lifetime:** 30 days
+- **Warn before expiry:** 3 days
+
+Adjust these under **Configure** on the integration card. When the warning window starts, Home Assistant shows a **Cookie refresh recommended** notification.
+
+Example automation:
+
+```yaml
+alias: Mobile Link cookie refresh reminder
+trigger:
+  - platform: state
+    entity_id: binary_sensor.mobile_link_jason_hammond_gmail_com_cookie_refresh_due
+    to: "on"
+action:
+  - service: notify.notify
+    data:
+      message: "Mobile Link cookie may expire soon. Reconfigure the integration and paste a fresh cookie."
+```
+
+If you upgrade from an older version, the cookie timer starts when you update. Reconfigure once with your current cookie to reset the timer from a known-good session.
 
 ## Options
 
@@ -154,6 +192,7 @@ From the integration card, choose **Configure** to:
 
 - Change which tanks are monitored
 - Enable or disable optional sensors (last reading, capacity, battery, status)
+- Set estimated cookie lifetime and warning lead time
 
 Changes apply immediately after saving.
 
