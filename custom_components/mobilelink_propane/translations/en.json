@@ -10,7 +10,7 @@
       },
       "login_guidance": {
         "title": "Copy your Mobile Link cookie",
-        "description": "### Before you start\n- Use **Chrome** or **Edge** on a computer.\n- Log in at [{login_url}]({login_url}) as **{username}**.\n- Wait until the **dashboard shows your propane tank(s)**.\n\n### Open Developer Tools\n1. Press **F12** → **Network** tab.\n2. Click **Fetch/XHR**.\n3. Optional: enable **Preserve log**, then press **Ctrl+R**.\n\n### Select the best request\n**Recommended:** `list` → `/api/v2/Apparatus/list` with status **200**.\n\nThis is the request Home Assistant uses. Its **Preview** tab should show JSON with your tank name and `FuelLevel`.\n\n**Do not use these for first-time setup:**\n- `/api/v1/Subscription/payment/...` (status **204**, empty response)\n- `/api/v4/Subscription/details/...`\n- `Account`, `MessageCenter`, `dashboard`, CSS/JS/fonts\n\nThe cookie is usually the same on all API calls, but `Apparatus/list` lets you confirm the session works before pasting.\n\n### Copy the full cookie value\n1. Select the request.\n2. Open **Headers** → **Request Headers**.\n3. Find **`cookie`**.\n4. Copy the **entire value** from the first `visid_incap_...` through the end.\n\nYour cookie should include **all** of these parts:\n- `.AspNetCore.Cookies=chunks-2`\n- `.AspNetCore.CookiesC1=...` (very long)\n- `.AspNetCore.CookiesC2=...` (very long)\n- `visid_incap_...`, `incap_ses_...`, and related Imperva entries\n\nIf you only copy part of `CookiesC1`, authentication will fail.\n\n**Easier option:** right-click the request → **Copy** → **Copy as cURL**, then paste the whole command here.\n\n### Paste below",
+        "description": "### Before you start\n- Use **Chrome** or **Edge** on a computer.\n- Log in at [{login_url}]({login_url}) as **{username}**.\n- Wait until the **dashboard shows your propane tank(s)**.\n- Copy and paste the cookie **immediately** — it expires quickly.\n\n### Open Developer Tools\n1. Press **F12** → **Network** tab.\n2. Click **Fetch/XHR**.\n3. Enable **Preserve log**, then press **Ctrl+R**.\n\n### Select the best request\n**Best choice:** `list` → `/api/v2/Apparatus/list` with status **200**.\n\nOpen **Preview** — you should see JSON with your tank name and `FuelLevel`.\n\n**Also acceptable:** `/api/v1/Account/` with status **200**.\n\n**Avoid:** `Subscription/payment` (204), `dashboard`, CSS/JS/fonts.\n\n### Copy the full cookie\n1. Open **Headers** → **Request Headers** → **`cookie`**.\n2. Copy the **entire** value (from `visid_incap_...` through the end).\n3. Must include `.AspNetCore.Cookies=chunks-2`, `.AspNetCore.CookiesC1`, and `.AspNetCore.CookiesC2`.\n\n**Easier:** right-click the request → **Copy** → **Copy as cURL**, then paste here.\n\n### Paste below{error_detail}",
         "data": {
           "cookie_header": "Cookie / headers"
         }
@@ -31,7 +31,9 @@
       }
     },
     "error": {
-      "invalid_auth": "Invalid or expired cookie. Log in again and copy a fresh cookie from /api/v2/Apparatus/list.",
+      "invalid_auth": "Authentication failed. Copy a fresh cookie from /api/v2/Apparatus/list immediately after logging in.",
+      "session_expired": "Session expired. Log in again and copy a fresh cookie right away — do not wait.",
+      "blocked_by_imperva": "Blocked by Mobile Link bot protection. Update the integration, then copy a fresh cookie and try again.",
       "incomplete_cookie": "Cookie looks incomplete. Copy the entire cookie value, including .AspNetCore.CookiesC1 and CookiesC2.",
       "cannot_connect": "Cannot connect to Mobile Link. Check your network connection and cookie.",
       "no_tanks_selected": "Select at least one propane tank."
@@ -59,7 +61,9 @@
       "no_tanks": "No propane tanks were found for this account."
     },
     "error": {
-      "invalid_auth": "Invalid or expired cookie. Reconfigure with a fresh cookie from /api/v2/Apparatus/list.",
+      "invalid_auth": "Authentication failed. Copy a fresh cookie from /api/v2/Apparatus/list immediately after logging in.",
+      "session_expired": "Session expired. Log in again and copy a fresh cookie right away — do not wait.",
+      "blocked_by_imperva": "Blocked by Mobile Link bot protection. Update the integration, then copy a fresh cookie and try again.",
       "incomplete_cookie": "Cookie looks incomplete. Copy the entire cookie value, including .AspNetCore.CookiesC1 and CookiesC2.",
       "cannot_connect": "Cannot connect to Mobile Link. Check your network connection.",
       "no_tanks_selected": "Select at least one propane tank."

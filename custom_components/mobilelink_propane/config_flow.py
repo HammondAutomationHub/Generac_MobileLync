@@ -51,6 +51,15 @@ def _tank_selector(tanks: dict[int, str]) -> selector.SelectSelector:
     )
 
 
+def _auth_error_key(err: MobileLinkAuthError) -> str:
+    message = str(err).lower()
+    if "imperva" in message or "bot protection" in message:
+        return "blocked_by_imperva"
+    if "expired" in message or "401" in message:
+        return "session_expired"
+    return "invalid_auth"
+
+
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Mobile Link Propane."""
 
@@ -76,6 +85,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Guide the user to log in and paste an authenticated cookie."""
         errors: dict[str, str] = {}
         username = self.context.get("username", "")
+        error_detail = ""
 
         if user_input is not None:
             cookie = normalize_cookie_header(user_input[CONF_COOKIE_HEADER])
@@ -86,10 +96,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 try:
                     tanks = await _discover_tanks(self.hass, cookie)
-                except MobileLinkAuthError:
-                    errors["base"] = "invalid_auth"
-                except MobileLinkApiError:
+                except MobileLinkAuthError as err:
+                    _LOGGER.warning("Mobile Link auth failed during setup: %s", err)
+                    errors["base"] = _auth_error_key(err)
+                    error_detail = str(err)
+                except MobileLinkApiError as err:
+                    _LOGGER.warning("Mobile Link connection failed during setup: %s", err)
                     errors["base"] = "cannot_connect"
+                    error_detail = str(err)
                 except Exception:
                     _LOGGER.exception("Unexpected error during Mobile Link setup")
                     errors["base"] = "cannot_connect"
@@ -103,10 +117,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="login_guidance",
-            data_schema=vol.Schema({vol.Required(CONF_COOKIE_HEADER): str}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_COOKIE_HEADER): selector.TextSelector(
+                        selector.TextSelectorConfig(multiline=True)
+                    )
+                }
+            ),
             description_placeholders={
                 "login_url": LOGIN_URL,
                 "username": username,
+                "error_detail": (
+                    f"\n\n**Last attempt failed:** {error_detail}" if error_detail else ""
+                ),
             },
             errors=errors,
         )
@@ -164,8 +187,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 try:
                     await _discover_tanks(self.hass, cookie)
-                except MobileLinkAuthError:
-                    errors["base"] = "invalid_auth"
+                except MobileLinkAuthError as err:
+                    _LOGGER.warning("Mobile Link auth failed during reauthentication: %s", err)
+                    errors["base"] = _auth_error_key(err)
                 except MobileLinkApiError:
                     errors["base"] = "cannot_connect"
                 except Exception:
@@ -180,7 +204,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="reauth_guidance",
-            data_schema=vol.Schema({vol.Required(CONF_COOKIE_HEADER): str}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_COOKIE_HEADER): selector.TextSelector(
+                        selector.TextSelectorConfig(multiline=True)
+                    )
+                }
+            ),
             description_placeholders={
                 "login_url": LOGIN_URL,
                 "username": username,
@@ -261,8 +291,9 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         tanks: dict[int, str] = {}
         try:
             tanks = await _discover_tanks(self.hass, cookie)
-        except MobileLinkAuthError:
-            errors["base"] = "invalid_auth"
+        except MobileLinkAuthError as err:
+            _LOGGER.warning("Mobile Link auth failed loading options: %s", err)
+            errors["base"] = _auth_error_key(err)
         except MobileLinkApiError:
             errors["base"] = "cannot_connect"
         except Exception:

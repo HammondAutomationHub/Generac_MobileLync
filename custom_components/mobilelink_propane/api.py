@@ -1,15 +1,23 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+import aiohttp
 from aiohttp import ClientError
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import APPARATUS_LIST_URL, INTEGRATION_VERSION, LOGIN_URL
-from .util import parse_float_value, parse_last_reading
+from .const import (
+    APPARATUS_LIST_URL,
+    BROWSER_USER_AGENT,
+    DASHBOARD_URL,
+    LOGIN_URL,
+)
+from .util import parse_cookie_dict, parse_float_value, parse_last_reading
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class MobileLinkAuthError(Exception):
@@ -49,61 +57,132 @@ def _property_string(props: dict[str, Any], name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _browser_headers(*, accept_html: bool = False) -> dict[str, str]:
+    """Build browser-like headers required to pass Imperva bot protection."""
+    return {
+        "Accept": (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            if accept_html
+            else "application/json, text/plain, */*"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": DASHBOARD_URL,
+        "Origin": LOGIN_URL,
+        "User-Agent": BROWSER_USER_AGENT,
+        "sec-ch-ua": '"Not;A=Brand";v="8", "Chromium";v="150", "Google Chrome";v="150"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty" if not accept_html else "document",
+        "sec-fetch-mode": "cors" if not accept_html else "navigate",
+        "sec-fetch-site": "same-origin",
+    }
+
+
+def _looks_like_imperva_block(status: int, content_type: str, body: str) -> bool:
+    lowered = body.lower()
+    return status == 403 or (
+        "text/html" in content_type
+        and ("incapsula" in lowered or "_incapsula_" in lowered or "<html" in lowered)
+    )
+
+
+async def _read_response(resp: aiohttp.ClientResponse) -> tuple[str, str]:
+    content_type = resp.headers.get("Content-Type", "")
+    text = await resp.text()
+    return content_type, text
+
+
+def _raise_for_response(status: int, content_type: str, text: str) -> None:
+    if _looks_like_imperva_block(status, content_type, text):
+        raise MobileLinkAuthError(
+            "Blocked by Imperva bot protection while Home Assistant contacted Mobile Link. "
+            f"HTTP {status}. Body starts: {text[:160]!r}"
+        )
+
+    if status in (401, 403):
+        raise MobileLinkAuthError(
+            f"HTTP {status}: session expired or unauthorized. "
+            "Copy a fresh cookie from /api/v2/Apparatus/list immediately after logging in, "
+            f"then paste it right away. Body starts: {text[:160]!r}"
+        )
+
+    if status >= 500:
+        raise MobileLinkApiError(f"HTTP {status}: server error. Body starts: {text[:160]!r}")
+
+    if status >= 400:
+        raise MobileLinkApiError(f"HTTP {status}: request failed. Body starts: {text[:160]!r}")
+
+    if "application/json" not in content_type:
+        raise MobileLinkAuthError(
+            f"Expected JSON but got {content_type or 'unknown content-type'}. "
+            f"Body starts: {text[:160]!r}"
+        )
+
+
 class MobileLinkApiClient:
     """Minimal Mobile Link client using a user-provided authenticated cookie header."""
 
     BASE = "https://app.mobilelinkgen.com"
 
     def __init__(self, hass: HomeAssistant) -> None:
-        self._session = async_get_clientsession(hass)
+        """Accept hass for compatibility with the coordinator."""
 
     async def get_apparatus_list(self, cookie_header: str) -> list[dict[str, Any]]:
-        headers = {
-            "Cookie": cookie_header,
-            "Accept": "application/json, text/plain, */*",
-            "Referer": f"{LOGIN_URL}/dashboard",
-            "User-Agent": f"HomeAssistant-MobileLinkPropane/{INTEGRATION_VERSION}",
-        }
+        cookies = parse_cookie_dict(cookie_header)
+        if not cookies:
+            raise MobileLinkAuthError("No cookies were parsed from the pasted value.")
+
+        _LOGGER.debug(
+            "Contacting Mobile Link with %d cookies, total header length %d",
+            len(cookies),
+            len(cookie_header),
+        )
+
+        timeout = aiohttp.ClientTimeout(total=45)
+        jar = aiohttp.CookieJar(unsafe=True)
+        jar.update_cookies(cookies)
 
         try:
-            resp = await self._session.get(APPARATUS_LIST_URL, headers=headers)
+            async with aiohttp.ClientSession(
+                timeout=timeout,
+                cookie_jar=jar,
+                headers={"User-Agent": BROWSER_USER_AGENT},
+            ) as session:
+                # Refresh Imperva/session cookies from Home Assistant's outbound IP.
+                async with session.get(
+                    DASHBOARD_URL,
+                    headers=_browser_headers(accept_html=True),
+                    allow_redirects=True,
+                ) as warmup_resp:
+                    warmup_type, warmup_body = await _read_response(warmup_resp)
+                    _LOGGER.debug(
+                        "Mobile Link dashboard warmup returned HTTP %s (%s)",
+                        warmup_resp.status,
+                        warmup_type or "unknown",
+                    )
+                    if _looks_like_imperva_block(
+                        warmup_resp.status, warmup_type, warmup_body
+                    ):
+                        raise MobileLinkAuthError(
+                            "Blocked by Imperva during dashboard warmup. "
+                            f"HTTP {warmup_resp.status}. Body starts: {warmup_body[:160]!r}"
+                        )
+
+                async with session.get(
+                    APPARATUS_LIST_URL,
+                    headers=_browser_headers(),
+                ) as resp:
+                    content_type, text = await _read_response(resp)
+                    _raise_for_response(resp.status, content_type, text)
+
+                    try:
+                        data = await resp.json(content_type=None)
+                    except Exception as err:
+                        raise MobileLinkApiError(
+                            f"Failed to parse JSON. Body starts: {text[:160]!r}"
+                        ) from err
         except ClientError as err:
             raise MobileLinkApiError(f"Connection error: {err}") from err
-
-        if resp.status in (401, 403):
-            text = await resp.text()
-            raise MobileLinkAuthError(
-                f"HTTP {resp.status}: unauthorized/forbidden. Body starts: {text[:120]!r}"
-            )
-
-        if resp.status >= 500:
-            text = await resp.text()
-            raise MobileLinkApiError(
-                f"HTTP {resp.status}: server error. Body starts: {text[:120]!r}"
-            )
-
-        if resp.status >= 400:
-            text = await resp.text()
-            raise MobileLinkApiError(
-                f"HTTP {resp.status}: request failed. Body starts: {text[:120]!r}"
-            )
-
-        content_type = resp.headers.get("Content-Type", "")
-        if "application/json" not in content_type:
-            text = await resp.text()
-            # Non-JSON usually means login page HTML or bot protection.
-            raise MobileLinkAuthError(
-                f"Expected JSON but got {content_type or 'unknown content-type'}. "
-                f"Body starts: {text[:120]!r}"
-            )
-
-        try:
-            data = await resp.json()
-        except Exception as err:
-            text = await resp.text()
-            raise MobileLinkApiError(
-                f"Failed to parse JSON. Body starts: {text[:120]!r}"
-            ) from err
 
         if not isinstance(data, list):
             raise MobileLinkApiError(f"Unexpected apparatus list shape: {type(data)}")
@@ -113,7 +192,6 @@ class MobileLinkApiClient:
     def parse_propane_tanks(apparatus_list: list[dict[str, Any]]) -> list[PropaneTank]:
         tanks: list[PropaneTank] = []
         for apparatus in apparatus_list:
-            # type == 2 is a fuel monitor / propane tank (confirmed via HAR capture).
             if apparatus.get("type") != 2:
                 continue
 

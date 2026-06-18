@@ -4,7 +4,14 @@ DOMAIN = "mobilelink_propane"
 
 LOGIN_URL = "https://app.mobilelinkgen.com"
 APPARATUS_LIST_URL = f"{LOGIN_URL}/api/v2/Apparatus/list"
-INTEGRATION_VERSION = "2.1.0"
+DASHBOARD_URL = f"{LOGIN_URL}/dashboard"
+
+# Mobile Link sits behind Imperva and rejects non-browser user agents (403 HTML).
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+)
+INTEGRATION_VERSION = "2.1.2"
 NOTIFICATION_ID_AUTH = f"{DOMAIN}_auth_expired"
 
 # Config entry data

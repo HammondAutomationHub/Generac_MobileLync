@@ -60,27 +60,32 @@ This keeps the request list short and makes the correct API call easier to find.
 
 ### Step 3 — Select the best request
 
-**Recommended (use this):**
+**Best choice (verify tanks before setup):**
 
 ```text
 Name:   list
 URL:    https://app.mobilelinkgen.com/api/v2/Apparatus/list
-Method: GET
 Status: 200
+Preview: JSON with "FuelLevel" and your tank name
 ```
 
-Open **Preview** and confirm JSON with your tank name and `FuelLevel`.
+**Also acceptable (cookie only):**
 
-**Avoid for first-time setup:**
+```text
+Name:   Account
+URL:    https://app.mobilelinkgen.com/api/v1/Account/
+Status: 200
+Preview: JSON with your name and email
+```
 
-| Request | Why skip it |
-|---------|-------------|
-| `/api/v1/Subscription/payment/...` | Status **204** — empty response, cannot verify tanks |
-| `/api/v4/Subscription/details/...` | Billing data only |
-| `Account`, `MessageCenter` | Not used to load tank levels |
+The cookie is identical on both requests. Use `Account/` only if you cannot find `Apparatus/list`, but you will not be able to confirm tank data until Home Assistant setup runs.
+
+**Avoid:**
+
+| Request | Why |
+|---------|-----|
+| `/api/v1/Subscription/payment/...` | Status **204** — no response body |
 | `dashboard` | HTML page, not an API call |
-
-The cookie is typically identical on all API requests, but `Apparatus/list` confirms your session can read tank data.
 
 ### Step 4 — Copy the full cookie value
 

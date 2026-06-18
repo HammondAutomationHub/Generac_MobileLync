@@ -16,6 +16,10 @@ def normalize_cookie_header(value: str) -> str:
     if not value:
         return value
 
+    # Collapse accidental line breaks from copy/paste.
+    value = value.replace("\r\n", "").replace("\n", "").replace("\r", "")
+    value = re.sub(r"[\u200b\u200c\u200d\ufeff]", "", value)
+
     curl_match = _CURL_COOKIE_RE.search(value)
     if curl_match:
         return curl_match.group(1).strip()
@@ -28,6 +32,21 @@ def normalize_cookie_header(value: str) -> str:
             return _COOKIE_PREFIX_RE.sub("", line).strip()
 
     return _COOKIE_PREFIX_RE.sub("", value).strip()
+
+
+def parse_cookie_dict(cookie_header: str) -> dict[str, str]:
+    """Parse a Cookie request header into a name/value mapping."""
+    cookies: dict[str, str] = {}
+    for part in cookie_header.split(";"):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        name, value = part.split("=", 1)
+        name = name.strip()
+        value = value.strip()
+        if name:
+            cookies[name] = value
+    return cookies
 
 
 def cookie_looks_incomplete(cookie_header: str) -> bool:
