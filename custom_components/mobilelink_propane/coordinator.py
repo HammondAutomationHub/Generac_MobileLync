@@ -6,7 +6,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers import persistent_notification
+from homeassistant.components import persistent_notification
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import MobileLinkApiClient, MobileLinkAuthError, MobileLinkApiError, PropaneTank
@@ -53,10 +53,10 @@ class MobileLinkCoordinator(DataUpdateCoordinator[dict[int, PropaneTank]]):
         return selected_ids
 
     def _dismiss_auth_notification(self) -> None:
-        persistent_notification.dismiss(self.hass, self._notification_id())
+        persistent_notification.async_dismiss(self.hass, self._notification_id())
 
     def _notify_auth_expired(self) -> None:
-        persistent_notification.create(
+        persistent_notification.async_create(
             self.hass,
             (
                 "Your Mobile Link session has expired. Open **Settings → Devices & Services**, "
