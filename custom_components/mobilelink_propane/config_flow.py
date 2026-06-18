@@ -46,21 +46,15 @@ def _tank_selector(tanks: dict[int, str]) -> selector.SelectSelector:
         selector.SelectSelectorConfig(
             options=options,
             multiple=True,
-            mode=selector.SelectSelectorMode.LIST,
-            sort=True,
-            custom_value=False,
+            mode=selector.SelectSelectorMode.DROPDOWN,
         )
     )
 
 
-class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 3
+class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for Mobile Link Propane."""
 
-    def __init__(self) -> None:
-        self._username: str | None = None
-        self._cookie: str | None = None
-        self._tanks: dict[int, str] = {}
-        self.reauth_entry: config_entries.ConfigEntry | None = None
+    VERSION = 3
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Collect the Mobile Link username."""
@@ -69,7 +63,7 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(username.lower())
             self._abort_if_unique_id_configured()
 
-            self._username = username
+            self.context["username"] = username
             return await self.async_step_login_guidance()
 
         return self.async_show_form(
@@ -81,6 +75,7 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_login_guidance(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Guide the user to log in and paste an authenticated cookie."""
         errors: dict[str, str] = {}
+        username = self.context.get("username", "")
 
         if user_input is not None:
             cookie = normalize_cookie_header(user_input[CONF_COOKIE_HEADER])
@@ -88,7 +83,7 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "invalid_auth"
             else:
                 try:
-                    self._tanks = await _discover_tanks(self.hass, cookie)
+                    tanks = await _discover_tanks(self.hass, cookie)
                 except MobileLinkAuthError:
                     errors["base"] = "invalid_auth"
                 except MobileLinkApiError:
@@ -97,10 +92,11 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.exception("Unexpected error during Mobile Link setup")
                     errors["base"] = "cannot_connect"
                 else:
-                    if not self._tanks:
+                    if not tanks:
                         return self.async_abort(reason="no_tanks")
 
-                    self._cookie = cookie
+                    self.context["cookie"] = cookie
+                    self.context["tanks"] = tanks
                     return await self.async_step_select_tanks()
 
         return self.async_show_form(
@@ -108,7 +104,7 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({vol.Required(CONF_COOKIE_HEADER): str}),
             description_placeholders={
                 "login_url": LOGIN_URL,
-                "username": self._username or "",
+                "username": username,
             },
             errors=errors,
         )
@@ -116,8 +112,9 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_select_tanks(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Let the user choose which propane tanks to add."""
         errors: dict[str, str] = {}
+        tanks: dict[int, str] = self.context.get("tanks", {})
 
-        if not self._tanks:
+        if not tanks:
             return self.async_abort(reason="no_tanks")
 
         if user_input is not None:
@@ -126,10 +123,10 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "no_tanks_selected"
             else:
                 return self.async_create_entry(
-                    title=f"Mobile Link ({self._username})",
+                    title=f"Mobile Link ({self.context.get('username', 'Generac')})",
                     data={
-                        CONF_COOKIE_HEADER: self._cookie,
-                        CONF_USERNAME: self._username,
+                        CONF_COOKIE_HEADER: self.context["cookie"],
+                        CONF_USERNAME: self.context.get("username"),
                     },
                     options={
                         CONF_SELECTED_TANKS: selected,
@@ -137,24 +134,24 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     },
                 )
 
-        default_selected = [str(apparatus_id) for apparatus_id in self._tanks]
+        default_selected = [str(apparatus_id) for apparatus_id in tanks]
         return self.async_show_form(
             step_id="select_tanks",
             data_schema=vol.Schema(
-                {vol.Required(CONF_SELECTED_TANKS, default=default_selected): _tank_selector(self._tanks)}
+                {vol.Required(CONF_SELECTED_TANKS, default=default_selected): _tank_selector(tanks)}
             ),
             errors=errors,
         )
 
-    async def async_step_reauth(self, entry_data: dict[str, Any]) -> FlowResult:
+    async def async_step_reauth(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Handle reauthentication."""
-        self.reauth_entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-        self._username = self.reauth_entry.data.get(CONF_USERNAME) if self.reauth_entry else None
         return await self.async_step_reauth_guidance()
 
     async def async_step_reauth_guidance(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Re-authenticate with a fresh cookie."""
         errors: dict[str, str] = {}
+        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
+        username = entry.data.get(CONF_USERNAME, "") if entry else ""
 
         if user_input is not None:
             cookie = normalize_cookie_header(user_input[CONF_COOKIE_HEADER])
@@ -171,30 +168,32 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     _LOGGER.exception("Unexpected error during Mobile Link reauthentication")
                     errors["base"] = "cannot_connect"
                 else:
-                    assert self.reauth_entry is not None
-                    return self.async_update_reload_and_abort(
-                        self.reauth_entry,
-                        data={**self.reauth_entry.data, CONF_COOKIE_HEADER: cookie},
-                    )
+                    if entry is not None:
+                        return self.async_update_reload_and_abort(
+                            entry,
+                            data={**entry.data, CONF_COOKIE_HEADER: cookie},
+                        )
 
         return self.async_show_form(
             step_id="reauth_guidance",
             data_schema=vol.Schema({vol.Required(CONF_COOKIE_HEADER): str}),
             description_placeholders={
                 "login_url": LOGIN_URL,
-                "username": self._username or "",
+                "username": username,
             },
             errors=errors,
         )
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> OptionsFlowHandler:
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
         return OptionsFlowHandler(config_entry)
 
-    @staticmethod
+    @classmethod
     @callback
-    def async_migrate_entry(hass: HomeAssistant, config_entry: config_entries.ConfigEntry) -> bool:
+    def async_migrate_entry(
+        cls, hass: HomeAssistant, config_entry: config_entries.ConfigEntry
+    ) -> bool:
         """Migrate older config entry schemas."""
         if config_entry.version >= 3:
             return True
@@ -202,10 +201,9 @@ class MobileLinkConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data = dict(config_entry.data)
         options = dict(config_entry.options)
 
-        if config_entry.version < 3:
-            if CONF_EMAIL in data:
-                data[CONF_USERNAME] = data.pop(CONF_EMAIL)
-            data.pop(CONF_PASSWORD, None)
+        if CONF_EMAIL in data:
+            data[CONF_USERNAME] = data.pop(CONF_EMAIL)
+        data.pop(CONF_PASSWORD, None)
 
         if CONF_SELECTED_TANKS in data:
             options.setdefault(CONF_SELECTED_TANKS, data.pop(CONF_SELECTED_TANKS))

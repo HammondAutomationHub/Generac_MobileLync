@@ -5,7 +5,6 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .coordinator import MobileLinkCoordinator
 from .const import DOMAIN, PLATFORMS
 
 _LOGGER = logging.getLogger(__name__)
@@ -19,6 +18,9 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Mobile Link Propane from a config entry."""
+    # Import here so config_flow can load even if setup dependencies change.
+    from .coordinator import MobileLinkCoordinator
+
     coordinator = MobileLinkCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
