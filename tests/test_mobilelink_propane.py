@@ -117,6 +117,24 @@ def test_parse_last_reading_iso_z() -> None:
     assert parsed == datetime(2026, 6, 17, 10, 18, 35)
 
 
+@pytest.mark.parametrize(
+    ("cookie", "expected_incomplete"),
+    [
+        ("", True),
+        (".AspNetCore.Cookies=abc", False),
+        (".AspNetCore.Cookies=chunks-2; .AspNetCore.CookiesC1=abc", True),
+        (
+            ".AspNetCore.Cookies=chunks-2; .AspNetCore.CookiesC1=abc; .AspNetCore.CookiesC2=def",
+            False,
+        ),
+    ],
+)
+def test_cookie_looks_incomplete(cookie: str, expected_incomplete: bool) -> None:
+    from util import cookie_looks_incomplete  # noqa: E402
+
+    assert cookie_looks_incomplete(cookie) is expected_incomplete
+
+
 def test_parse_propane_tanks_from_har_shape() -> None:
     tanks = MobileLinkApiClient.parse_propane_tanks([HAR_PROPANE_APPARATUS])
 

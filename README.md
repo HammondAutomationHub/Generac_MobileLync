@@ -58,45 +58,48 @@ These steps are based on a captured browser session to the Mobile Link dashboard
 
 This keeps the request list short and makes the correct API call easier to find.
 
-### Step 3 — Select the correct request
+### Step 3 — Select the best request
 
-In the Network list, find the request named **`list`** whose URL is:
+**Recommended (use this):**
 
 ```text
-https://app.mobilelinkgen.com/api/v2/Apparatus/list
+Name:   list
+URL:    https://app.mobilelinkgen.com/api/v2/Apparatus/list
+Method: GET
+Status: 200
 ```
 
-| Select this | Do not select |
-|-------------|---------------|
-| `list` → `/api/v2/Apparatus/list` | `dashboard` (HTML page) |
-| Method: **GET** | CSS, JS, fonts, images |
-| Status: **200** | `Account`, `Subscription`, `MessageCenter` |
-| Type: **fetch/xhr** | Google Analytics / telemetry calls |
+Open **Preview** and confirm JSON with your tank name and `FuelLevel`.
 
-**Tip:** Type `Apparatus` in the Network filter box if the list is long.
+**Avoid for first-time setup:**
 
-### Step 4 — Confirm the response is correct
+| Request | Why skip it |
+|---------|-------------|
+| `/api/v1/Subscription/payment/...` | Status **204** — empty response, cannot verify tanks |
+| `/api/v4/Subscription/details/...` | Billing data only |
+| `Account`, `MessageCenter` | Not used to load tank levels |
+| `dashboard` | HTML page, not an API call |
 
-With `list` selected:
+The cookie is typically identical on all API requests, but `Apparatus/list` confirms your session can read tank data.
 
-1. Open **Headers** and verify:
-   - **Request URL:** `https://app.mobilelinkgen.com/api/v2/Apparatus/list`
-   - **Request Method:** `GET`
-   - **Status Code:** `200`
-2. Open **Preview** or **Response** and confirm JSON like:
-   - `"name": "House Propane"` (your tank name)
-   - `"FuelLevel": 50`
-   - `"type": 2`
+### Step 4 — Copy the full cookie value
 
-If you see HTML or a login page instead of JSON, your session is not valid. Log in again and repeat.
+On **Headers** → **Request Headers** → **`cookie`**, copy the **entire** value.
 
-### Step 5 — Copy the cookie
+A valid Mobile Link cookie includes **all** of these parts:
 
-Still on the **Headers** tab, scroll to **Request Headers** and find **`cookie`**.
+```text
+visid_incap_...=...
+nlbi_...=...
+.AspNetCore.Cookies=chunks-2
+.AspNetCore.CookiesC1=...   (very long — do not truncate)
+.AspNetCore.CookiesC2=...   (very long — do not truncate)
+incap_ses_...=...
+```
 
-**Option A (recommended):** Copy the full cookie value — the long text after `cookie:`.
+**Common mistake:** copying only part of `.AspNetCore.CookiesC1`. The auth cookie is split across `C1` and `C2` — you need both.
 
-**Option B:** Right-click the `list` request → **Copy** → **Copy as cURL**, then paste the entire curl command into Home Assistant.
+**Easier option:** right-click the request → **Copy** → **Copy as cURL**, then paste the whole command into Home Assistant.
 
 Home Assistant accepts any of these formats:
 

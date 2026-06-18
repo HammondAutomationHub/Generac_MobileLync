@@ -10,7 +10,7 @@
       },
       "login_guidance": {
         "title": "Copy your Mobile Link cookie",
-        "description": "### Before you start\n- Use **Chrome** or **Edge** on a computer (recommended by Mobile Link).\n- Log in at [{login_url}]({login_url}) as **{username}**.\n- Complete any CAPTCHA and wait until the **dashboard shows your propane tank(s)**.\n\n### Open Developer Tools\n1. Press **F12** (or right-click the page → **Inspect**).\n2. Open the **Network** tab.\n3. Click the **Fetch/XHR** filter (Chrome/Edge) so only API calls are shown.\n4. Optional: check **Preserve log**, then press **Ctrl+R** to refresh once.\n\n### Select the correct request\nIn the request list, find the API call whose **Name** is **`list`** and whose **Path/URL** ends with:\n`/api/v2/Apparatus/list`\n\n**Select this request — not:**\n- `dashboard` (the HTML page)\n- CSS, JS, font, or image files\n- `Account`, `Subscription`, `MessageCenter`, or analytics/telemetry calls\n\n### Confirm it is the right request\nWith `list` selected, open the **Headers** tab:\n- **Request URL** should be `https://app.mobilelinkgen.com/api/v2/Apparatus/list`\n- **Request Method** should be **GET**\n- **Status Code** should be **200**\n\nOpen the **Response** or **Preview** tab and confirm you see JSON containing your tank name and a `FuelLevel` value. If you see HTML or a login page, your session is not ready — log in again and repeat.\n\n### Copy the cookie\nStill on the **Headers** tab, scroll to **Request Headers** and find **`cookie`** (Chrome/Edge may show it lowercase).\n1. Copy the **entire cookie value** (the long text after `cookie:`), **or**\n2. Right-click the `list` request → **Copy** → **Copy as cURL** and paste that here.\n\n**Accepted paste formats:** raw cookie value, a `Cookie: ...` line, copied request headers, or a curl command.\n\n### Paste below",
+        "description": "### Before you start\n- Use **Chrome** or **Edge** on a computer.\n- Log in at [{login_url}]({login_url}) as **{username}**.\n- Wait until the **dashboard shows your propane tank(s)**.\n\n### Open Developer Tools\n1. Press **F12** → **Network** tab.\n2. Click **Fetch/XHR**.\n3. Optional: enable **Preserve log**, then press **Ctrl+R**.\n\n### Select the best request\n**Recommended:** `list` → `/api/v2/Apparatus/list` with status **200**.\n\nThis is the request Home Assistant uses. Its **Preview** tab should show JSON with your tank name and `FuelLevel`.\n\n**Do not use these for first-time setup:**\n- `/api/v1/Subscription/payment/...` (status **204**, empty response)\n- `/api/v4/Subscription/details/...`\n- `Account`, `MessageCenter`, `dashboard`, CSS/JS/fonts\n\nThe cookie is usually the same on all API calls, but `Apparatus/list` lets you confirm the session works before pasting.\n\n### Copy the full cookie value\n1. Select the request.\n2. Open **Headers** → **Request Headers**.\n3. Find **`cookie`**.\n4. Copy the **entire value** from the first `visid_incap_...` through the end.\n\nYour cookie should include **all** of these parts:\n- `.AspNetCore.Cookies=chunks-2`\n- `.AspNetCore.CookiesC1=...` (very long)\n- `.AspNetCore.CookiesC2=...` (very long)\n- `visid_incap_...`, `incap_ses_...`, and related Imperva entries\n\nIf you only copy part of `CookiesC1`, authentication will fail.\n\n**Easier option:** right-click the request → **Copy** → **Copy as cURL**, then paste the whole command here.\n\n### Paste below",
         "data": {
           "cookie_header": "Cookie / headers"
         }
@@ -24,14 +24,15 @@
       },
       "reauth_guidance": {
         "title": "Re-authenticate Mobile Link",
-        "description": "Your Mobile Link session has expired for **{username}**.\n\n1. Log in again at [{login_url}]({login_url}).\n2. Open **F12 → Network → Fetch/XHR**.\n3. Refresh the dashboard.\n4. Select the **`list`** request to `/api/v2/Apparatus/list` (status **200**).\n5. Copy the **`cookie`** value from **Request Headers** (or paste a **Copy as cURL** command).\n6. Paste it below.",
+        "description": "Your Mobile Link session has expired for **{username}**.\n\n1. Log in again at [{login_url}]({login_url}).\n2. Open **F12 → Network → Fetch/XHR** and refresh the dashboard.\n3. Select **`list`** → `/api/v2/Apparatus/list` (status **200**).\n4. Copy the **full** `cookie` value from **Request Headers** (include `.AspNetCore.CookiesC1` and `CookiesC2`), or paste **Copy as cURL**.\n5. Paste it below.",
         "data": {
           "cookie_header": "Cookie / headers"
         }
       }
     },
     "error": {
-      "invalid_auth": "Invalid or expired cookie. Log in again, copy the cookie from the /api/v2/Apparatus/list request (status 200), and paste it here.",
+      "invalid_auth": "Invalid or expired cookie. Log in again and copy a fresh cookie from /api/v2/Apparatus/list.",
+      "incomplete_cookie": "Cookie looks incomplete. Copy the entire cookie value, including .AspNetCore.CookiesC1 and CookiesC2.",
       "cannot_connect": "Cannot connect to Mobile Link. Check your network connection and cookie.",
       "no_tanks_selected": "Select at least one propane tank."
     },
@@ -58,7 +59,8 @@
       "no_tanks": "No propane tanks were found for this account."
     },
     "error": {
-      "invalid_auth": "Invalid or expired cookie. Reconfigure the integration with a fresh cookie from /api/v2/Apparatus/list.",
+      "invalid_auth": "Invalid or expired cookie. Reconfigure with a fresh cookie from /api/v2/Apparatus/list.",
+      "incomplete_cookie": "Cookie looks incomplete. Copy the entire cookie value, including .AspNetCore.CookiesC1 and CookiesC2.",
       "cannot_connect": "Cannot connect to Mobile Link. Check your network connection.",
       "no_tanks_selected": "Select at least one propane tank."
     }

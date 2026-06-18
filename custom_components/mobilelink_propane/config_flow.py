@@ -25,7 +25,7 @@ from .const import (
     OPT_CREATE_LAST_READING_SENSOR,
     OPT_CREATE_STATUS_SENSOR,
 )
-from .util import normalize_cookie_header
+from .util import cookie_looks_incomplete, normalize_cookie_header
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -81,6 +81,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             cookie = normalize_cookie_header(user_input[CONF_COOKIE_HEADER])
             if not cookie:
                 errors["base"] = "invalid_auth"
+            elif cookie_looks_incomplete(cookie):
+                errors["base"] = "incomplete_cookie"
             else:
                 try:
                     tanks = await _discover_tanks(self.hass, cookie)
@@ -157,6 +159,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             cookie = normalize_cookie_header(user_input[CONF_COOKIE_HEADER])
             if not cookie:
                 errors["base"] = "invalid_auth"
+            elif cookie_looks_incomplete(cookie):
+                errors["base"] = "incomplete_cookie"
             else:
                 try:
                     await _discover_tanks(self.hass, cookie)

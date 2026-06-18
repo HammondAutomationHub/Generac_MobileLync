@@ -30,6 +30,24 @@ def normalize_cookie_header(value: str) -> str:
     return _COOKIE_PREFIX_RE.sub("", value).strip()
 
 
+def cookie_looks_incomplete(cookie_header: str) -> bool:
+    """Return True when required Mobile Link auth cookie parts appear to be missing."""
+    cookie = cookie_header.strip()
+    if not cookie:
+        return True
+
+    if ".AspNetCore.Cookies" not in cookie:
+        return True
+
+    if ".AspNetCore.Cookies=chunks" in cookie:
+        if ".AspNetCore.CookiesC1=" not in cookie:
+            return True
+        if "chunks-2" in cookie and ".AspNetCore.CookiesC2=" not in cookie:
+            return True
+
+    return False
+
+
 def parse_last_reading(value: str | None) -> datetime | None:
     """Parse Mobile Link last-reading timestamps into datetimes."""
     if not value:
