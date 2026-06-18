@@ -24,7 +24,7 @@
       },
       "reauth_guidance": {
         "title": "Re-authenticate Mobile Link",
-        "description": "Your Mobile Link session has expired for **{username}**.\n\n1. Log in again at [{login_url}]({login_url}).\n2. Open **F12 → Network → Fetch/XHR** and refresh the dashboard.\n3. Select **`list`** → `/api/v2/Apparatus/list` (status **200**).\n4. Copy the **full** `cookie` value from **Request Headers** (include `.AspNetCore.CookiesC1` and `CookiesC2`), or paste **Copy as cURL**.\n5. Paste it below.",
+        "description": "Your Mobile Link session has expired for **{username}**.\n\n1. Log in again at [{login_url}]({login_url}).\n2. Open **F12 → Network → Fetch/XHR** and refresh the dashboard.\n3. Select **`list`** → `/api/v2/Apparatus/list` (status **200**).\n4. Copy the **full** `cookie` value from **Request Headers** (include `.AspNetCore.CookiesC1` and `CookiesC2`), or paste **Copy as cURL**.\n5. Paste it below.{error_detail}",
         "data": {
           "cookie_header": "Cookie / headers"
         }

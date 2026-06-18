@@ -25,7 +25,7 @@ from .const import (
     OPT_CREATE_LAST_READING_SENSOR,
     OPT_CREATE_STATUS_SENSOR,
 )
-from .util import cookie_looks_incomplete, normalize_cookie_header
+from .util import cookie_diagnostics, cookie_looks_incomplete, normalize_cookie_header
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -99,7 +99,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 except MobileLinkAuthError as err:
                     _LOGGER.warning("Mobile Link auth failed during setup: %s", err)
                     errors["base"] = _auth_error_key(err)
-                    error_detail = str(err)
+                    error_detail = f"{cookie_diagnostics(cookie)}. {err}"
                 except MobileLinkApiError as err:
                     _LOGGER.warning("Mobile Link connection failed during setup: %s", err)
                     errors["base"] = "cannot_connect"
@@ -175,6 +175,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_reauth_guidance(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Re-authenticate with a fresh cookie."""
         errors: dict[str, str] = {}
+        error_detail = ""
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         username = entry.data.get(CONF_USERNAME, "") if entry else ""
 
@@ -190,8 +191,10 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 except MobileLinkAuthError as err:
                     _LOGGER.warning("Mobile Link auth failed during reauthentication: %s", err)
                     errors["base"] = _auth_error_key(err)
-                except MobileLinkApiError:
+                    error_detail = f"{cookie_diagnostics(cookie)}. {err}"
+                except MobileLinkApiError as err:
                     errors["base"] = "cannot_connect"
+                    error_detail = str(err)
                 except Exception:
                     _LOGGER.exception("Unexpected error during Mobile Link reauthentication")
                     errors["base"] = "cannot_connect"
@@ -214,6 +217,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={
                 "login_url": LOGIN_URL,
                 "username": username,
+                "error_detail": (
+                    f"\n\n**Last attempt failed:** {error_detail}" if error_detail else ""
+                ),
             },
             errors=errors,
         )

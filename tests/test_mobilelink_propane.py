@@ -44,7 +44,8 @@ sys.modules["homeassistant.helpers"] = homeassistant_helpers
 sys.modules["homeassistant.helpers.aiohttp_client"] = homeassistant_aiohttp_client
 
 from api import MobileLinkApiClient  # noqa: E402
-from util import normalize_cookie_header, parse_float_value, parse_last_reading  # noqa: E402
+from util import cookie_diagnostics, normalize_cookie_header, parse_float_value, parse_last_reading  # noqa: E402
+from util import cookie_looks_incomplete, parse_cookie_dict  # noqa: E402
 
 HAR_PROPANE_APPARATUS = {
     "apparatusId": 4967543,
@@ -133,6 +134,29 @@ def test_cookie_looks_incomplete(cookie: str, expected_incomplete: bool) -> None
     from util import cookie_looks_incomplete  # noqa: E402
 
     assert cookie_looks_incomplete(cookie) is expected_incomplete
+
+
+def test_parse_cookie_dict_handles_chunked_aspnet_cookies() -> None:
+    cookie = (
+        "visid_incap_3205248=abc; .AspNetCore.Cookies=chunks-2; "
+        ".AspNetCore.CookiesC1=part1; .AspNetCore.CookiesC2=part2; ai_session=x|1|2"
+    )
+    parsed = parse_cookie_dict(cookie)
+
+    assert parsed[".AspNetCore.Cookies"] == "chunks-2"
+    assert parsed[".AspNetCore.CookiesC1"] == "part1"
+    assert parsed[".AspNetCore.CookiesC2"] == "part2"
+    assert len(parsed) == 5
+
+
+def test_cookie_diagnostics_reports_aspnet_parts() -> None:
+    cookie = ".AspNetCore.Cookies=chunks-2; .AspNetCore.CookiesC1=a; .AspNetCore.CookiesC2=b"
+    summary = cookie_diagnostics(cookie)
+
+    assert "3 cookies parsed" in summary
+    assert ".AspNetCore.Cookies" in summary
+    assert ".AspNetCore.CookiesC1" in summary
+    assert ".AspNetCore.CookiesC2" in summary
 
 
 def test_parse_propane_tanks_from_har_shape() -> None:

@@ -11,7 +11,7 @@ BROWSER_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
 )
-INTEGRATION_VERSION = "2.1.2"
+INTEGRATION_VERSION = "2.1.3"
 NOTIFICATION_ID_AUTH = f"{DOMAIN}_auth_expired"
 
 # Config entry data

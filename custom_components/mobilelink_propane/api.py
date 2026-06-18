@@ -127,7 +127,38 @@ class MobileLinkApiClient:
     def __init__(self, hass: HomeAssistant) -> None:
         """Accept hass for compatibility with the coordinator."""
 
+    @staticmethod
+    def _request_headers(cookie_header: str, *, accept_html: bool = False) -> dict[str, str]:
+        """Build request headers, passing the pasted cookie string through unchanged."""
+        headers = _browser_headers(accept_html=accept_html)
+        headers["Cookie"] = cookie_header
+        return headers
+
+    async def _fetch_apparatus_list(
+        self,
+        session: aiohttp.ClientSession,
+        cookie_header: str,
+    ) -> list[dict[str, Any]]:
+        async with session.get(
+            APPARATUS_LIST_URL,
+            headers=self._request_headers(cookie_header),
+        ) as resp:
+            content_type, text = await _read_response(resp)
+            _raise_for_response(resp.status, content_type, text)
+
+            try:
+                data = await resp.json(content_type=None)
+            except Exception as err:
+                raise MobileLinkApiError(
+                    f"Failed to parse JSON. Body starts: {text[:160]!r}"
+                ) from err
+
+        if not isinstance(data, list):
+            raise MobileLinkApiError(f"Unexpected apparatus list shape: {type(data)}")
+        return data
+
     async def get_apparatus_list(self, cookie_header: str) -> list[dict[str, Any]]:
+        cookie_header = cookie_header.strip()
         cookies = parse_cookie_dict(cookie_header)
         if not cookies:
             raise MobileLinkAuthError("No cookies were parsed from the pasted value.")
@@ -139,54 +170,49 @@ class MobileLinkApiClient:
         )
 
         timeout = aiohttp.ClientTimeout(total=45)
-        jar = aiohttp.CookieJar(unsafe=True)
-        jar.update_cookies(cookies)
 
         try:
+            # Keep a jar only for Imperva Set-Cookie responses from Home Assistant's IP.
+            # Auth cookies are always sent via the raw Cookie header so chunked
+            # .AspNetCore.Cookies* values are not mangled by aiohttp's cookie jar.
             async with aiohttp.ClientSession(
                 timeout=timeout,
-                cookie_jar=jar,
+                cookie_jar=aiohttp.CookieJar(unsafe=True),
                 headers={"User-Agent": BROWSER_USER_AGENT},
             ) as session:
-                # Refresh Imperva/session cookies from Home Assistant's outbound IP.
-                async with session.get(
-                    DASHBOARD_URL,
-                    headers=_browser_headers(accept_html=True),
-                    allow_redirects=True,
-                ) as warmup_resp:
-                    warmup_type, warmup_body = await _read_response(warmup_resp)
+                try:
+                    return await self._fetch_apparatus_list(session, cookie_header)
+                except MobileLinkAuthError as first_err:
+                    if "imperva" not in str(first_err).lower():
+                        raise
+
                     _LOGGER.debug(
-                        "Mobile Link dashboard warmup returned HTTP %s (%s)",
-                        warmup_resp.status,
-                        warmup_type or "unknown",
+                        "Direct apparatus request blocked by Imperva; trying dashboard warmup"
                     )
-                    if _looks_like_imperva_block(
-                        warmup_resp.status, warmup_type, warmup_body
-                    ):
-                        raise MobileLinkAuthError(
-                            "Blocked by Imperva during dashboard warmup. "
-                            f"HTTP {warmup_resp.status}. Body starts: {warmup_body[:160]!r}"
+                    async with session.get(
+                        DASHBOARD_URL,
+                        headers=self._request_headers(cookie_header, accept_html=True),
+                        allow_redirects=True,
+                    ) as warmup_resp:
+                        warmup_type, warmup_body = await _read_response(warmup_resp)
+                        _LOGGER.debug(
+                            "Mobile Link dashboard warmup returned HTTP %s (%s)",
+                            warmup_resp.status,
+                            warmup_type or "unknown",
                         )
+                        if _looks_like_imperva_block(
+                            warmup_resp.status, warmup_type, warmup_body
+                        ):
+                            raise MobileLinkAuthError(
+                                "Blocked by Imperva bot protection while Home Assistant "
+                                "contacted Mobile Link. Copy a fresh cookie from "
+                                "/api/v2/Apparatus/list and paste it immediately. "
+                                f"HTTP {warmup_resp.status}. Body starts: {warmup_body[:160]!r}"
+                            ) from first_err
 
-                async with session.get(
-                    APPARATUS_LIST_URL,
-                    headers=_browser_headers(),
-                ) as resp:
-                    content_type, text = await _read_response(resp)
-                    _raise_for_response(resp.status, content_type, text)
-
-                    try:
-                        data = await resp.json(content_type=None)
-                    except Exception as err:
-                        raise MobileLinkApiError(
-                            f"Failed to parse JSON. Body starts: {text[:160]!r}"
-                        ) from err
+                    return await self._fetch_apparatus_list(session, cookie_header)
         except ClientError as err:
             raise MobileLinkApiError(f"Connection error: {err}") from err
-
-        if not isinstance(data, list):
-            raise MobileLinkApiError(f"Unexpected apparatus list shape: {type(data)}")
-        return data
 
     @staticmethod
     def parse_propane_tanks(apparatus_list: list[dict[str, Any]]) -> list[PropaneTank]:

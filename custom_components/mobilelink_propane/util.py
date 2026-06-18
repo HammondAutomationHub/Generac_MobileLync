@@ -39,14 +39,28 @@ def parse_cookie_dict(cookie_header: str) -> dict[str, str]:
     cookies: dict[str, str] = {}
     for part in cookie_header.split(";"):
         part = part.strip()
-        if not part or "=" not in part:
+        if not part:
+            continue
+        if "=" not in part:
             continue
         name, value = part.split("=", 1)
         name = name.strip()
         value = value.strip()
         if name:
+            # Later duplicates win, matching typical browser Cookie header behavior.
             cookies[name] = value
     return cookies
+
+
+def cookie_diagnostics(cookie_header: str) -> str:
+    """Return a short human-readable summary for setup error messages."""
+    cookies = parse_cookie_dict(cookie_header)
+    names = sorted(cookies)
+    aspnet = [name for name in names if name.startswith(".AspNetCore.Cookies")]
+    return (
+        f"{len(cookies)} cookies parsed ({len(cookie_header)} chars); "
+        f"AspNetCore parts: {', '.join(aspnet) if aspnet else 'missing'}"
+    )
 
 
 def cookie_looks_incomplete(cookie_header: str) -> bool:
