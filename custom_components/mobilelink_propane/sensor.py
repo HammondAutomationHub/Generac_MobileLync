@@ -83,6 +83,7 @@ class _BaseTankSensor(CoordinatorEntity[MobileLinkCoordinator], SensorEntity):
         tank = self._tank
         return DeviceInfo(
             identifiers={(DOMAIN, f"apparatus_{self._apparatus_id}")},
+            via_device=(DOMAIN, self.coordinator.entry.entry_id),
             name=(tank.name if tank else f"Propane Tank {self._apparatus_id}"),
             manufacturer="Generac",
             model=(tank.device_type if tank else "Mobile Link Propane Monitor"),

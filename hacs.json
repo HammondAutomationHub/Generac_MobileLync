@@ -2,6 +2,7 @@
   "name": "Mobile Link Propane",
   "content_in_root": false,
   "render_readme": true,
+  "icon": "icon.png",
   "domains": [
     "mobilelink_propane"
   ]

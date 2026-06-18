@@ -10,6 +10,7 @@ A Home Assistant custom integration to monitor **Generac propane tank levels** v
 - Cookie-based authentication that works with Generac's anti-bot protections
 - Automatic session expiry detection with persistent notification and guided re-authentication
 - Options reload automatically when you change tanks or sensor settings
+- Generac branding in Home Assistant (integration icon and device pages)
 
 ## Installation
 
@@ -32,6 +33,16 @@ A Home Assistant custom integration to monitor **Generac propane tank levels** v
 4. Follow the cookie steps below.
 5. Select which propane tanks to add.
 6. Optionally enable extra sensors under **Configure**.
+
+## Branding
+
+The integration ships with the official Generac logo in `custom_components/mobilelink_propane/brand/`. Home Assistant **2026.3+** shows it automatically on:
+
+- **Settings → Devices & Services** (integration tile)
+- The Mobile Link service device page
+- Linked propane tank device pages
+
+To use your own image, replace `brand/icon.png` (square, 256×256 recommended) and restart Home Assistant.
 
 ## How to copy your Mobile Link cookie (Developer Tools)
 
