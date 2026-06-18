@@ -8,7 +8,7 @@ from aiohttp import ClientError
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import INTEGRATION_VERSION
+from .const import APPARATUS_LIST_URL, INTEGRATION_VERSION, LOGIN_URL
 from .util import parse_float_value, parse_last_reading
 
 
@@ -30,11 +30,23 @@ class PropaneTank:
     battery_level: str | None = None
     battery_percent: float | None = None
     device_status: str | None = None
+    network_type: str | None = None
+    signal_strength: str | None = None
     fuel_level: float | None = None
+    fuel_gallons: float | None = None
     last_reading: str | None = None
     last_reading_at: datetime | None = None
     capacity: str | None = None
     capacity_gallons: float | None = None
+    fuel_type: str | None = None
+    orientation: str | None = None
+    consumption_types: str | None = None
+    localized_address: str | None = None
+
+
+def _property_string(props: dict[str, Any], name: str) -> str | None:
+    value = props.get(name)
+    return value if isinstance(value, str) else None
 
 
 class MobileLinkApiClient:
@@ -49,14 +61,12 @@ class MobileLinkApiClient:
         headers = {
             "Cookie": cookie_header,
             "Accept": "application/json, text/plain, */*",
+            "Referer": f"{LOGIN_URL}/dashboard",
             "User-Agent": f"HomeAssistant-MobileLinkPropane/{INTEGRATION_VERSION}",
         }
 
         try:
-            resp = await self._session.get(
-                f"{self.BASE}/api/v2/Apparatus/list",
-                headers=headers,
-            )
+            resp = await self._session.get(APPARATUS_LIST_URL, headers=headers)
         except ClientError as err:
             raise MobileLinkApiError(f"Connection error: {err}") from err
 
@@ -103,7 +113,7 @@ class MobileLinkApiClient:
     def parse_propane_tanks(apparatus_list: list[dict[str, Any]]) -> list[PropaneTank]:
         tanks: list[PropaneTank] = []
         for apparatus in apparatus_list:
-            # type == 2 appears to be propane apparatus (per HAR)
+            # type == 2 is a fuel monitor / propane tank (confirmed via HAR capture).
             if apparatus.get("type") != 2:
                 continue
 
@@ -115,14 +125,18 @@ class MobileLinkApiClient:
             device = props.get("Device") if isinstance(props.get("Device"), dict) else {}
 
             fuel_level = parse_float_value(props.get("FuelLevel"))
-            last_reading = (
-                props.get("LastReading") if isinstance(props.get("LastReading"), str) else None
-            )
+            last_reading_raw = props.get("LastReading")
+            last_reading = str(last_reading_raw) if last_reading_raw is not None else None
             capacity_raw = props.get("Capacity")
             capacity = str(capacity_raw) if capacity_raw is not None else None
+            capacity_gallons = parse_float_value(capacity_raw)
+            battery_level_raw = device.get("batteryLevel") if isinstance(device, dict) else None
             battery_level = (
-                device.get("batteryLevel") if isinstance(device, dict) else None
+                str(battery_level_raw) if battery_level_raw is not None else None
             )
+            fuel_gallons = None
+            if capacity_gallons is not None and fuel_level is not None:
+                fuel_gallons = round(capacity_gallons * fuel_level / 100, 1)
 
             tanks.append(
                 PropaneTank(
@@ -131,18 +145,31 @@ class MobileLinkApiClient:
                         apparatus.get("name") or f"Propane Tank {apparatus.get('apparatusId')}"
                     ),
                     is_connected=bool(apparatus.get("isConnected", False)),
+                    localized_address=(
+                        apparatus.get("localizedAddress")
+                        if isinstance(apparatus.get("localizedAddress"), str)
+                        else None
+                    ),
                     device_id=(device.get("deviceId") if isinstance(device, dict) else None),
                     device_type=(device.get("deviceType") if isinstance(device, dict) else None),
-                    battery_level=(
-                        str(battery_level) if battery_level is not None else None
-                    ),
-                    battery_percent=parse_float_value(battery_level),
+                    battery_level=battery_level,
+                    battery_percent=parse_float_value(battery_level_raw),
                     device_status=(device.get("status") if isinstance(device, dict) else None),
+                    network_type=(device.get("networkType") if isinstance(device, dict) else None),
+                    signal_strength=(
+                        str(device.get("signalStrength"))
+                        if isinstance(device, dict) and device.get("signalStrength") is not None
+                        else None
+                    ),
                     fuel_level=fuel_level,
+                    fuel_gallons=fuel_gallons,
                     last_reading=last_reading,
                     last_reading_at=parse_last_reading(last_reading),
                     capacity=capacity,
-                    capacity_gallons=parse_float_value(capacity_raw),
+                    capacity_gallons=capacity_gallons,
+                    fuel_type=_property_string(props, "FuelType"),
+                    orientation=_property_string(props, "Orientation"),
+                    consumption_types=_property_string(props, "ConsumptionTypes"),
                 )
             )
         return tanks

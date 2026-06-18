@@ -3,14 +3,14 @@
     "step": {
       "user": {
         "title": "Generac Mobile Link",
-        "description": "Enter your Mobile Link username (email). You will be guided to log in and provide a session cookie.",
+        "description": "Enter your Mobile Link username (email). The next step explains how to copy a session cookie from your browser.",
         "data": {
           "username": "Username (email)"
         }
       },
       "login_guidance": {
-        "title": "Log in to Mobile Link",
-        "description": "1. Open [{login_url}]({login_url}) and log in as **{username}** (complete any CAPTCHA).\n\n2. Open Developer Tools (F12) → **Network** tab.\n\n3. Refresh the page.\n\n4. Select any request to app.mobilelinkgen.com and copy the full **Cookie** request header.\n\n5. Paste it below. You can paste the raw cookie value, a `Cookie: ...` line, copied request headers, or a curl command that includes the cookie.",
+        "title": "Copy your Mobile Link cookie",
+        "description": "### Before you start\n- Use **Chrome** or **Edge** on a computer (recommended by Mobile Link).\n- Log in at [{login_url}]({login_url}) as **{username}**.\n- Complete any CAPTCHA and wait until the **dashboard shows your propane tank(s)**.\n\n### Open Developer Tools\n1. Press **F12** (or right-click the page → **Inspect**).\n2. Open the **Network** tab.\n3. Click the **Fetch/XHR** filter (Chrome/Edge) so only API calls are shown.\n4. Optional: check **Preserve log**, then press **Ctrl+R** to refresh once.\n\n### Select the correct request\nIn the request list, find the API call whose **Name** is **`list`** and whose **Path/URL** ends with:\n`/api/v2/Apparatus/list`\n\n**Select this request — not:**\n- `dashboard` (the HTML page)\n- CSS, JS, font, or image files\n- `Account`, `Subscription`, `MessageCenter`, or analytics/telemetry calls\n\n### Confirm it is the right request\nWith `list` selected, open the **Headers** tab:\n- **Request URL** should be `https://app.mobilelinkgen.com/api/v2/Apparatus/list`\n- **Request Method** should be **GET**\n- **Status Code** should be **200**\n\nOpen the **Response** or **Preview** tab and confirm you see JSON containing your tank name and a `FuelLevel` value. If you see HTML or a login page, your session is not ready — log in again and repeat.\n\n### Copy the cookie\nStill on the **Headers** tab, scroll to **Request Headers** and find **`cookie`** (Chrome/Edge may show it lowercase).\n1. Copy the **entire cookie value** (the long text after `cookie:`), **or**\n2. Right-click the `list` request → **Copy** → **Copy as cURL** and paste that here.\n\n**Accepted paste formats:** raw cookie value, a `Cookie: ...` line, copied request headers, or a curl command.\n\n### Paste below",
         "data": {
           "cookie_header": "Cookie / headers"
         }
@@ -24,14 +24,14 @@
       },
       "reauth_guidance": {
         "title": "Re-authenticate Mobile Link",
-        "description": "Your Mobile Link session has expired. Log in again at [{login_url}]({login_url}) and paste a fresh cookie for **{username}**.",
+        "description": "Your Mobile Link session has expired for **{username}**.\n\n1. Log in again at [{login_url}]({login_url}).\n2. Open **F12 → Network → Fetch/XHR**.\n3. Refresh the dashboard.\n4. Select the **`list`** request to `/api/v2/Apparatus/list` (status **200**).\n5. Copy the **`cookie`** value from **Request Headers** (or paste a **Copy as cURL** command).\n6. Paste it below.",
         "data": {
           "cookie_header": "Cookie / headers"
         }
       }
     },
     "error": {
-      "invalid_auth": "Invalid or expired cookie. Please log in again and paste a fresh cookie.",
+      "invalid_auth": "Invalid or expired cookie. Log in again, copy the cookie from the /api/v2/Apparatus/list request (status 200), and paste it here.",
       "cannot_connect": "Cannot connect to Mobile Link. Check your network connection and cookie.",
       "no_tanks_selected": "Select at least one propane tank."
     },
@@ -58,7 +58,7 @@
       "no_tanks": "No propane tanks were found for this account."
     },
     "error": {
-      "invalid_auth": "Invalid or expired cookie. Reconfigure the integration with a fresh cookie.",
+      "invalid_auth": "Invalid or expired cookie. Reconfigure the integration with a fresh cookie from /api/v2/Apparatus/list.",
       "cannot_connect": "Cannot connect to Mobile Link. Check your network connection.",
       "no_tanks_selected": "Select at least one propane tank."
     }

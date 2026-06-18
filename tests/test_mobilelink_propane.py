@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import types
 from datetime import datetime
 from pathlib import Path
 
@@ -10,7 +11,69 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENT_PATH = ROOT / "custom_components" / "mobilelink_propane"
 sys.path.insert(0, str(COMPONENT_PATH))
 
+# Minimal stubs so api.py can be imported without Home Assistant installed.
+aiohttp = types.ModuleType("aiohttp")
+
+
+class _ClientError(Exception):
+    pass
+
+
+aiohttp.ClientError = _ClientError
+sys.modules["aiohttp"] = aiohttp
+
+homeassistant = types.ModuleType("homeassistant")
+homeassistant_core = types.ModuleType("homeassistant.core")
+homeassistant_helpers = types.ModuleType("homeassistant.helpers")
+homeassistant_aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
+
+
+class _HomeAssistant:
+    pass
+
+
+homeassistant_core.HomeAssistant = _HomeAssistant
+homeassistant_aiohttp_client.async_get_clientsession = lambda _hass: None
+homeassistant.core = homeassistant_core
+homeassistant.helpers = homeassistant_helpers
+homeassistant_helpers.aiohttp_client = homeassistant_aiohttp_client
+
+sys.modules["homeassistant"] = homeassistant
+sys.modules["homeassistant.core"] = homeassistant_core
+sys.modules["homeassistant.helpers"] = homeassistant_helpers
+sys.modules["homeassistant.helpers.aiohttp_client"] = homeassistant_aiohttp_client
+
+from api import MobileLinkApiClient  # noqa: E402
 from util import normalize_cookie_header, parse_float_value, parse_last_reading  # noqa: E402
+
+HAR_PROPANE_APPARATUS = {
+    "apparatusId": 4967543,
+    "name": "House Propane",
+    "type": 2,
+    "localizedAddress": "1120 Blossom Trail, Newcastle, CA, 95658",
+    "isConnected": True,
+    "properties": [
+        {
+            "name": "Device",
+            "value": {
+                "deviceId": "002b00293937393105473130",
+                "deviceType": "lte-tankutility-v2",
+                "batteryLevel": "good",
+                "status": "Online",
+                "networkType": "lte-tankutility-v2",
+            },
+        },
+        {"name": "FuelType", "value": "Propane"},
+        {"name": "Orientation", "value": "horizontal"},
+        {"name": "Capacity", "value": "500"},
+        {
+            "name": "ConsumptionTypes",
+            "value": "Home Heat, Water Heater, Stove/Oven, Fireplace",
+        },
+        {"name": "LastReading", "value": "2026-06-17T10:18:35Z"},
+        {"name": "FuelLevel", "value": 50},
+    ],
+}
 
 
 @pytest.mark.parametrize(
@@ -38,6 +101,7 @@ def test_normalize_cookie_header(raw: str, expected: str) -> None:
     [
         ("75", 75.0),
         ("75.5", 75.5),
+        ("500", 500.0),
         ("500 gal", 500.0),
         ("1,250 gallons", 1250.0),
         ("N/A", None),
@@ -48,11 +112,26 @@ def test_parse_float_value(raw: str | None, expected: float | None) -> None:
     assert parse_float_value(raw) == expected
 
 
-def test_parse_last_reading_iso() -> None:
-    parsed = parse_last_reading("2024-06-18T14:30:00")
-    assert parsed == datetime(2024, 6, 18, 14, 30, 0)
+def test_parse_last_reading_iso_z() -> None:
+    parsed = parse_last_reading("2026-06-17T10:18:35Z")
+    assert parsed == datetime(2026, 6, 17, 10, 18, 35)
 
 
-def test_parse_last_reading_us_format() -> None:
-    parsed = parse_last_reading("06/18/2024 02:30:00 PM")
-    assert parsed == datetime(2024, 6, 18, 14, 30, 0)
+def test_parse_propane_tanks_from_har_shape() -> None:
+    tanks = MobileLinkApiClient.parse_propane_tanks([HAR_PROPANE_APPARATUS])
+
+    assert len(tanks) == 1
+    tank = tanks[0]
+    assert tank.apparatus_id == 4967543
+    assert tank.name == "House Propane"
+    assert tank.fuel_level == 50.0
+    assert tank.capacity_gallons == 500.0
+    assert tank.fuel_gallons == 250.0
+    assert tank.battery_level == "good"
+    assert tank.battery_percent is None
+    assert tank.device_status == "Online"
+    assert tank.device_type == "lte-tankutility-v2"
+    assert tank.fuel_type == "Propane"
+    assert tank.orientation == "horizontal"
+    assert tank.consumption_types == "Home Heat, Water Heater, Stove/Oven, Fireplace"
+    assert tank.last_reading_at == datetime(2026, 6, 17, 10, 18, 35)

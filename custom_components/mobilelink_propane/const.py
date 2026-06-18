@@ -3,6 +3,7 @@ from __future__ import annotations
 DOMAIN = "mobilelink_propane"
 
 LOGIN_URL = "https://app.mobilelinkgen.com"
+APPARATUS_LIST_URL = f"{LOGIN_URL}/api/v2/Apparatus/list"
 INTEGRATION_VERSION = "2.1.0"
 NOTIFICATION_ID_AUTH = f"{DOMAIN}_auth_expired"
 

@@ -126,9 +126,16 @@ class MobileLinkPropanePercentSensor(_BaseTankSensor):
             "last_reading_at": tank.last_reading_at.isoformat() if tank.last_reading_at else None,
             "capacity_gallons": tank.capacity_gallons,
             "capacity": tank.capacity,
+            "fuel_gallons": tank.fuel_gallons,
+            "fuel_type": tank.fuel_type,
+            "orientation": tank.orientation,
+            "consumption_types": tank.consumption_types,
+            "localized_address": tank.localized_address,
             "battery_level": tank.battery_level,
             "battery_percent": tank.battery_percent,
             "device_status": tank.device_status,
+            "network_type": tank.network_type,
+            "signal_strength": tank.signal_strength,
             "device_id": tank.device_id,
             "device_type": tank.device_type,
             "is_connected": tank.is_connected,
@@ -181,10 +188,12 @@ class MobileLinkPropaneCapacitySensor(_ConnectedDiagnosticSensor):
 
 
 class MobileLinkPropaneBatterySensor(_ConnectedDiagnosticSensor):
+    """Battery sensor.
+
+    Mobile Link often reports qualitative values such as 'good' rather than a percent.
+    """
+
     _attr_translation_key = "battery"
-    _attr_native_unit_of_measurement = PERCENTAGE
-    _attr_device_class = SensorDeviceClass.BATTERY
-    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:battery"
 
@@ -197,14 +206,39 @@ class MobileLinkPropaneBatterySensor(_ConnectedDiagnosticSensor):
         tank = self._tank
         if not tank:
             return None
-        return tank.battery_percent
+        if tank.battery_percent is not None:
+            return tank.battery_percent
+        return tank.battery_level
+
+    @property
+    def native_unit_of_measurement(self):
+        tank = self._tank
+        if tank and tank.battery_percent is not None:
+            return PERCENTAGE
+        return None
+
+    @property
+    def device_class(self):
+        tank = self._tank
+        if tank and tank.battery_percent is not None:
+            return SensorDeviceClass.BATTERY
+        return None
+
+    @property
+    def state_class(self):
+        tank = self._tank
+        if tank and tank.battery_percent is not None:
+            return SensorStateClass.MEASUREMENT
+        return None
 
     @property
     def available(self) -> bool:
         if not super().available:
             return False
         tank = self._tank
-        return tank is not None and tank.battery_percent is not None
+        return tank is not None and (
+            tank.battery_level is not None or tank.battery_percent is not None
+        )
 
 
 class MobileLinkPropaneStatusSensor(_ConnectedDiagnosticSensor):
