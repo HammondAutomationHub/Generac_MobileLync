@@ -25,7 +25,7 @@ def cookie_updated_at(entry: ConfigEntry) -> datetime:
     if isinstance(raw, str):
         parsed = dt_util.parse_datetime(raw)
         if parsed is not None:
-            return parsed
+            return dt_util.as_utc(parsed)
     return dt_util.now()
 
 
@@ -49,12 +49,16 @@ def cookie_warn_days(entry: ConfigEntry) -> int:
 
 def estimated_cookie_expiry(entry: ConfigEntry) -> datetime:
     """Return the estimated cookie expiry time."""
-    return cookie_updated_at(entry) + timedelta(days=cookie_lifetime_days(entry))
+    return dt_util.as_utc(
+        cookie_updated_at(entry) + timedelta(days=cookie_lifetime_days(entry))
+    )
 
 
 def cookie_warn_at(entry: ConfigEntry) -> datetime:
     """Return when the refresh warning window begins."""
-    return estimated_cookie_expiry(entry) - timedelta(days=cookie_warn_days(entry))
+    return dt_util.as_utc(
+        estimated_cookie_expiry(entry) - timedelta(days=cookie_warn_days(entry))
+    )
 
 
 def cookie_age_days(entry: ConfigEntry, *, now: datetime | None = None) -> float:

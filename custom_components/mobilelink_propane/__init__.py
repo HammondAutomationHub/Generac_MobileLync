@@ -17,6 +17,13 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate config entries when the config flow version changes."""
+    from .migrate import migrate_config_entry
+
+    return migrate_config_entry(hass, entry)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Mobile Link Propane from a config entry."""
     # Import here so config_flow can load even if setup dependencies change.

@@ -18,6 +18,7 @@ from .const import (
     CONF_PASSWORD,
     CONF_SELECTED_TANKS,
     CONF_USERNAME,
+    CONFIG_ENTRY_VERSION,
     DEFAULT_COOKIE_LIFETIME_DAYS,
     DEFAULT_COOKIE_WARN_DAYS,
     DEFAULT_OPTIONS,
@@ -69,7 +70,7 @@ def _auth_error_key(err: MobileLinkAuthError) -> str:
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Mobile Link Propane."""
 
-    VERSION = 4
+    VERSION = CONFIG_ENTRY_VERSION
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
         """Collect the Mobile Link username."""
@@ -239,41 +240,6 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
         return OptionsFlowHandler(config_entry)
-
-    @classmethod
-    @callback
-    def async_migrate_entry(
-        cls, hass: HomeAssistant, config_entry: config_entries.ConfigEntry
-    ) -> bool:
-        """Migrate older config entry schemas."""
-        data = dict(config_entry.data)
-        options = dict(config_entry.options)
-        version = config_entry.version
-
-        if version < 3:
-            if CONF_EMAIL in data:
-                data[CONF_USERNAME] = data.pop(CONF_EMAIL)
-            data.pop(CONF_PASSWORD, None)
-
-            if CONF_SELECTED_TANKS in data:
-                options.setdefault(CONF_SELECTED_TANKS, data.pop(CONF_SELECTED_TANKS))
-
-        if version < 4:
-            data.setdefault(CONF_COOKIE_UPDATED_AT, cookie_stored_at_iso())
-
-        for key, default in DEFAULT_OPTIONS.items():
-            options.setdefault(key, default)
-
-        if version >= 4:
-            return True
-
-        hass.config_entries.async_update_entry(
-            config_entry,
-            data=data,
-            options=options,
-            version=4,
-        )
-        return True
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):

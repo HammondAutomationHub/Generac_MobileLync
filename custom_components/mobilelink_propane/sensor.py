@@ -6,11 +6,13 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfVolume
+from homeassistant.const import PERCENTAGE, UnitOfDuration, UnitOfVolume
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_SELECTED_TANKS,
@@ -98,7 +100,7 @@ class _ServiceSensor(CoordinatorEntity[MobileLinkCoordinator], SensorEntity):
 
 class MobileLinkCookieAgeSensor(_ServiceSensor):
     _attr_translation_key = "cookie_age"
-    _attr_native_unit_of_measurement = "d"
+    _attr_native_unit_of_measurement = UnitOfDuration.DAYS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:cookie-clock"
 
@@ -133,7 +135,7 @@ class MobileLinkCookieRefreshBySensor(_ServiceSensor):
 
     @property
     def native_value(self):
-        return estimated_cookie_expiry(self.coordinator.entry)
+        return dt_util.as_utc(estimated_cookie_expiry(self.coordinator.entry))
 
 
 class _BaseTankSensor(CoordinatorEntity[MobileLinkCoordinator], SensorEntity):
