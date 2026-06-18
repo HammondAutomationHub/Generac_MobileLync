@@ -2,8 +2,15 @@
   "config": {
     "step": {
       "user": {
-        "title": "Mobile Link Propane",
-        "description": "Paste your authenticated Mobile Link cookie.\n\nYou can paste ANY of these:\n• The raw cookie value (looks like: a=b; c=d)\n• A single header line (Cookie: a=b; c=d)\n• An entire Request Headers block copied from DevTools\n• A curl command that includes -H 'Cookie: ...'\n\nHow to get it:\n1) Log in to app.mobilelinkgen.com in a browser (complete any CAPTCHA).\n2) Open DevTools → Network.\n3) Click the request to /api/v2/Apparatus/list.\n4) In Request Headers, copy the Cookie header (or copy all headers) and paste it here.\n\nTip: Cookies expire. If it stops working, reauth and paste a fresh cookie.",
+        "title": "Generac Mobile Link",
+        "description": "Enter your Mobile Link username (email). You will be guided to log in and provide a session cookie.",
+        "data": {
+          "username": "Username (email)"
+        }
+      },
+      "login_guidance": {
+        "title": "Log in to Mobile Link",
+        "description": "1. Open [{login_url}]({login_url}) and log in as **{username}** (complete any CAPTCHA).\n\n2. Open Developer Tools (F12) → **Network** tab.\n\n3. Refresh the page.\n\n4. Select any request to app.mobilelinkgen.com and copy the full **Cookie** request header.\n\n5. Paste it below. You can paste the raw cookie value, a `Cookie: ...` line, copied request headers, or a curl command that includes the cookie.",
         "data": {
           "cookie_header": "Cookie / headers"
         }
@@ -15,41 +22,63 @@
           "selected_tanks": "Tanks"
         }
       },
-      "reauth_confirm": {
-        "title": "Reauthenticate",
-        "description": "Your session cookie is invalid or expired. Paste a fresh cookie header. {error_detail}",
+      "reauth_guidance": {
+        "title": "Re-authenticate Mobile Link",
+        "description": "Your Mobile Link session has expired. Log in again at [{login_url}]({login_url}) and paste a fresh cookie for **{username}**.",
         "data": {
-          "cookie_header": "Cookie header"
+          "cookie_header": "Cookie / headers"
         }
       }
     },
     "error": {
-      "cannot_connect": "Failed to connect.",
-      "invalid_cookie": "Cookie header is invalid or expired.",
-      "no_tanks": "No propane tanks were found for this account."
+      "invalid_auth": "Invalid or expired cookie. Please log in again and paste a fresh cookie.",
+      "cannot_connect": "Cannot connect to Mobile Link. Check your network connection and cookie.",
+      "no_tanks_selected": "Select at least one propane tank."
     },
     "abort": {
-      "reauth_successful": "Re-authentication was successful."
+      "already_configured": "This Mobile Link account is already configured.",
+      "no_tanks": "No propane tanks were found for this account."
     }
   },
   "options": {
     "step": {
-      "select_tanks": {
-        "title": "Select propane tanks",
-        "description": "Choose which propane tanks to keep in Home Assistant.",
+      "init": {
+        "title": "Mobile Link options",
+        "description": "Choose which tanks to monitor and which optional sensors to create.",
         "data": {
-          "selected_tanks": "Tanks"
+          "selected_tanks": "Tanks",
+          "create_last_reading_sensor": "Create last reading sensor",
+          "create_capacity_sensor": "Create capacity sensor",
+          "create_battery_sensor": "Create battery sensor",
+          "create_status_sensor": "Create connection status sensor"
         }
+      }
+    },
+    "abort": {
+      "no_tanks": "No propane tanks were found for this account."
+    },
+    "error": {
+      "invalid_auth": "Invalid or expired cookie. Reconfigure the integration with a fresh cookie.",
+      "cannot_connect": "Cannot connect to Mobile Link. Check your network connection.",
+      "no_tanks_selected": "Select at least one propane tank."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "propane_level": {
+        "name": "Propane level"
       },
-      "sensors": {
-        "title": "Optional sensors",
-        "description": "Enable additional sensors for each tank.",
-        "data": {
-          "create_last_reading_sensor": "Create Last Reading timestamp sensor",
-          "create_capacity_sensor": "Create Capacity (gal) sensor",
-          "create_battery_sensor": "Create Battery sensor",
-          "create_status_sensor": "Create Status sensor"
-        }
+      "last_reading": {
+        "name": "Last reading"
+      },
+      "capacity": {
+        "name": "Capacity"
+      },
+      "battery": {
+        "name": "Battery"
+      },
+      "status": {
+        "name": "Status"
       }
     }
   }

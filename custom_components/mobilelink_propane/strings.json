@@ -3,39 +3,82 @@
     "step": {
       "user": {
         "title": "Generac Mobile Link",
-        "description": "Enter your Mobile Link username (email). You will be guided to log in and provide a cookie.",
+        "description": "Enter your Mobile Link username (email). You will be guided to log in and provide a session cookie.",
         "data": {
-          "username": "Username (Email)"
+          "username": "Username (email)"
         }
       },
       "login_guidance": {
-        "title": "Login to Mobile Link",
-        "description": "1. Click the link below and log in to your Generac Mobile Link account (handle any CAPTCHA).\n\n2. Open Developer Tools (F12) → Network tab.\n\n3. Refresh the page.\n\n4. Copy the entire **Cookie** header from any request to app.mobilelinkgen.com.\n\n5. Paste it below.",
+        "title": "Log in to Mobile Link",
+        "description": "1. Open [{login_url}]({login_url}) and log in as **{username}** (complete any CAPTCHA).\n\n2. Open Developer Tools (F12) → **Network** tab.\n\n3. Refresh the page.\n\n4. Select any request to app.mobilelinkgen.com and copy the full **Cookie** request header.\n\n5. Paste it below. You can paste the raw cookie value, a `Cookie: ...` line, copied request headers, or a curl command that includes the cookie.",
         "data": {
-          "cookie_header": "Full Cookie Header"
+          "cookie_header": "Cookie / headers"
+        }
+      },
+      "select_tanks": {
+        "title": "Select propane tanks",
+        "description": "Choose which propane tanks to add to Home Assistant.",
+        "data": {
+          "selected_tanks": "Tanks"
         }
       },
       "reauth_guidance": {
         "title": "Re-authenticate Mobile Link",
-        "description": "Your session has expired. Please log in again and provide the new cookie.",
+        "description": "Your Mobile Link session has expired. Log in again at [{login_url}]({login_url}) and paste a fresh cookie for **{username}**.",
         "data": {
-          "cookie_header": "Full Cookie Header"
+          "cookie_header": "Cookie / headers"
         }
       }
     },
     "error": {
-      "invalid_auth": "Invalid cookie. Please try again.",
-      "cannot_connect": "Cannot connect to Mobile Link. Please check your cookie."
+      "invalid_auth": "Invalid or expired cookie. Please log in again and paste a fresh cookie.",
+      "cannot_connect": "Cannot connect to Mobile Link. Check your network connection and cookie.",
+      "no_tanks_selected": "Select at least one propane tank."
     },
     "abort": {
-      "already_configured": "This account is already configured."
+      "already_configured": "This Mobile Link account is already configured.",
+      "no_tanks": "No propane tanks were found for this account."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Sensor Options",
-        "description": "Choose which sensors to create."
+        "title": "Mobile Link options",
+        "description": "Choose which tanks to monitor and which optional sensors to create.",
+        "data": {
+          "selected_tanks": "Tanks",
+          "create_last_reading_sensor": "Create last reading sensor",
+          "create_capacity_sensor": "Create capacity sensor",
+          "create_battery_sensor": "Create battery sensor",
+          "create_status_sensor": "Create connection status sensor"
+        }
+      }
+    },
+    "abort": {
+      "no_tanks": "No propane tanks were found for this account."
+    },
+    "error": {
+      "invalid_auth": "Invalid or expired cookie. Reconfigure the integration with a fresh cookie.",
+      "cannot_connect": "Cannot connect to Mobile Link. Check your network connection.",
+      "no_tanks_selected": "Select at least one propane tank."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "propane_level": {
+        "name": "Propane level"
+      },
+      "last_reading": {
+        "name": "Last reading"
+      },
+      "capacity": {
+        "name": "Capacity"
+      },
+      "battery": {
+        "name": "Battery"
+      },
+      "status": {
+        "name": "Status"
       }
     }
   }

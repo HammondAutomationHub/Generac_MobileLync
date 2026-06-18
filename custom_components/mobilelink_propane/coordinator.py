@@ -6,6 +6,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import persistent_notification
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import MobileLinkApiClient, MobileLinkAuthError, MobileLinkApiError, PropaneTank
@@ -14,6 +15,7 @@ from .const import (
     CONF_SELECTED_TANKS,
     DOMAIN,
     DEFAULT_SCAN_INTERVAL_SECONDS,
+    NOTIFICATION_ID_AUTH,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,17 +33,44 @@ class MobileLinkCoordinator(DataUpdateCoordinator[dict[int, PropaneTank]]):
             update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL_SECONDS),
         )
 
+    def _notification_id(self) -> str:
+        return f"{NOTIFICATION_ID_AUTH}_{self.entry.entry_id}"
+
     def _selected_ids(self) -> set[int]:
-        # Prefer options if present, otherwise fall back to entry.data
-        selected = self.entry.options.get(CONF_SELECTED_TANKS, self.entry.data.get(CONF_SELECTED_TANKS, []))
-        try:
-            return {int(x) for x in selected}
-        except Exception:
+        selected = self.entry.options.get(
+            CONF_SELECTED_TANKS,
+            self.entry.data.get(CONF_SELECTED_TANKS, []),
+        )
+        if not selected:
             return set()
+
+        selected_ids: set[int] = set()
+        for value in selected:
+            try:
+                selected_ids.add(int(value))
+            except (TypeError, ValueError):
+                _LOGGER.warning("Ignoring invalid selected tank id: %r", value)
+        return selected_ids
+
+    def _dismiss_auth_notification(self) -> None:
+        persistent_notification.dismiss(self.hass, self._notification_id())
+
+    def _notify_auth_expired(self) -> None:
+        persistent_notification.create(
+            self.hass,
+            (
+                "Your Mobile Link session has expired. Open **Settings → Devices & Services**, "
+                "select **Generac Mobile Link Propane**, and choose **Reconfigure** to paste a "
+                "fresh cookie."
+            ),
+            title="Mobile Link session expired",
+            notification_id=self._notification_id(),
+        )
 
     async def _async_update_data(self) -> dict[int, PropaneTank]:
         cookie_header = self.entry.data.get(CONF_COOKIE_HEADER)
         if not cookie_header:
+            self._notify_auth_expired()
             raise ConfigEntryAuthFailed("No cookie header configured")
 
         try:
@@ -49,12 +78,13 @@ class MobileLinkCoordinator(DataUpdateCoordinator[dict[int, PropaneTank]]):
             tanks = self.client.parse_propane_tanks(apparatus)
             selected = self._selected_ids()
             if selected:
-                tanks = [t for t in tanks if t.apparatus_id in selected]
-            return {t.apparatus_id: t for t in tanks}
-        except MobileLinkAuthError as e:
-            # Triggers Reauth flow in HA
-            raise ConfigEntryAuthFailed(str(e)) from e
-        except MobileLinkApiError as e:
-            raise UpdateFailed(str(e)) from e
-        except Exception as e:
-            raise UpdateFailed(f"Unexpected error: {e}") from e
+                tanks = [tank for tank in tanks if tank.apparatus_id in selected]
+            self._dismiss_auth_notification()
+            return {tank.apparatus_id: tank for tank in tanks}
+        except MobileLinkAuthError as err:
+            self._notify_auth_expired()
+            raise ConfigEntryAuthFailed(str(err)) from err
+        except MobileLinkApiError as err:
+            raise UpdateFailed(str(err)) from err
+        except Exception as err:
+            raise UpdateFailed(f"Unexpected error: {err}") from err

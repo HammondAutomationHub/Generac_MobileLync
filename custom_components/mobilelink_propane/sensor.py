@@ -1,35 +1,50 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import PERCENTAGE, UnitOfVolume
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    DOMAIN,
     CONF_SELECTED_TANKS,
-    OPT_CREATE_LAST_READING_SENSOR,
-    OPT_CREATE_CAPACITY_SENSOR,
+    DOMAIN,
     OPT_CREATE_BATTERY_SENSOR,
+    OPT_CREATE_CAPACITY_SENSOR,
+    OPT_CREATE_LAST_READING_SENSOR,
     OPT_CREATE_STATUS_SENSOR,
 )
 from .coordinator import MobileLinkCoordinator
 
 
-@dataclass(frozen=True)
-class _TankRef:
-    apparatus_id: int
+def _selected_tank_ids(entry: ConfigEntry, coordinator: MobileLinkCoordinator) -> list[int]:
+    selected = entry.options.get(CONF_SELECTED_TANKS, entry.data.get(CONF_SELECTED_TANKS, []))
+    if not selected:
+        return list(coordinator.data.keys())
+
+    selected_ids: list[int] = []
+    for value in selected:
+        try:
+            selected_ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return selected_ids or list(coordinator.data.keys())
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
     coordinator: MobileLinkCoordinator = hass.data[DOMAIN][entry.entry_id]
 
-    selected = entry.options.get(CONF_SELECTED_TANKS, entry.data.get(CONF_SELECTED_TANKS, []))
-    selected_ids = [int(x) for x in selected] if selected else list(coordinator.data.keys())
+    selected_ids = _selected_tank_ids(entry, coordinator)
 
     create_last = entry.options.get(OPT_CREATE_LAST_READING_SENSOR, False)
     create_capacity = entry.options.get(OPT_CREATE_CAPACITY_SENSOR, False)
@@ -37,22 +52,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     create_status = entry.options.get(OPT_CREATE_STATUS_SENSOR, False)
 
     entities: list[SensorEntity] = []
-    for aid in selected_ids:
-        entities.append(MobileLinkPropanePercentSensor(coordinator, aid))
+    for apparatus_id in selected_ids:
+        entities.append(MobileLinkPropanePercentSensor(coordinator, apparatus_id))
 
         if create_last:
-            entities.append(MobileLinkPropaneLastReadingSensor(coordinator, aid))
+            entities.append(MobileLinkPropaneLastReadingSensor(coordinator, apparatus_id))
         if create_capacity:
-            entities.append(MobileLinkPropaneCapacitySensor(coordinator, aid))
+            entities.append(MobileLinkPropaneCapacitySensor(coordinator, apparatus_id))
         if create_battery:
-            entities.append(MobileLinkPropaneBatterySensor(coordinator, aid))
+            entities.append(MobileLinkPropaneBatterySensor(coordinator, apparatus_id))
         if create_status:
-            entities.append(MobileLinkPropaneStatusSensor(coordinator, aid))
+            entities.append(MobileLinkPropaneStatusSensor(coordinator, apparatus_id))
 
     async_add_entities(entities, update_before_add=True)
 
 
 class _BaseTankSensor(CoordinatorEntity[MobileLinkCoordinator], SensorEntity):
+    _attr_has_entity_name = True
+
     def __init__(self, coordinator: MobileLinkCoordinator, apparatus_id: int) -> None:
         super().__init__(coordinator)
         self._apparatus_id = int(apparatus_id)
@@ -64,35 +81,35 @@ class _BaseTankSensor(CoordinatorEntity[MobileLinkCoordinator], SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         tank = self._tank
-        identifiers = {(DOMAIN, f"apparatus_{self._apparatus_id}")}
         return DeviceInfo(
-            identifiers=identifiers,
+            identifiers={(DOMAIN, f"apparatus_{self._apparatus_id}")},
             name=(tank.name if tank else f"Propane Tank {self._apparatus_id}"),
             manufacturer="Generac",
-            model=(tank.device_type if tank else "Mobile Link Apparatus"),
+            model=(tank.device_type if tank else "Mobile Link Propane Monitor"),
         )
 
     @property
     def available(self) -> bool:
+        return self.coordinator.last_update_success and self._tank is not None
+
+
+class _ConnectedDiagnosticSensor(_BaseTankSensor):
+    @property
+    def available(self) -> bool:
         tank = self._tank
-        if tank is None:
-            return False
-        return True
+        return super().available and bool(tank and tank.is_connected)
 
 
 class MobileLinkPropanePercentSensor(_BaseTankSensor):
-    _attr_native_unit_of_measurement = "%"
+    _attr_translation_key = "propane_level"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:gas-cylinder"
+    _attr_suggested_display_precision = 0
 
     def __init__(self, coordinator: MobileLinkCoordinator, apparatus_id: int) -> None:
         super().__init__(coordinator, apparatus_id)
         self._attr_unique_id = f"mobilelink_propane_{apparatus_id}_percent"
-
-    @property
-    def name(self) -> str:
-        tank = self._tank
-        base = tank.name if tank else f"Tank {self._apparatus_id}"
-        return f"{base} Propane"
 
     @property
     def native_value(self):
@@ -106,8 +123,11 @@ class MobileLinkPropanePercentSensor(_BaseTankSensor):
             return {}
         return {
             "last_reading": tank.last_reading,
-            "capacity_gallons": tank.capacity,
+            "last_reading_at": tank.last_reading_at.isoformat() if tank.last_reading_at else None,
+            "capacity_gallons": tank.capacity_gallons,
+            "capacity": tank.capacity,
             "battery_level": tank.battery_level,
+            "battery_percent": tank.battery_percent,
             "device_status": tank.device_status,
             "device_id": tank.device_id,
             "device_type": tank.device_type,
@@ -115,8 +135,10 @@ class MobileLinkPropanePercentSensor(_BaseTankSensor):
         }
 
 
-class MobileLinkPropaneLastReadingSensor(_BaseTankSensor):
+class MobileLinkPropaneLastReadingSensor(_ConnectedDiagnosticSensor):
+    _attr_translation_key = "last_reading"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:clock-outline"
 
     def __init__(self, coordinator: MobileLinkCoordinator, apparatus_id: int) -> None:
@@ -124,38 +146,46 @@ class MobileLinkPropaneLastReadingSensor(_BaseTankSensor):
         self._attr_unique_id = f"mobilelink_propane_{apparatus_id}_last_reading"
 
     @property
-    def name(self) -> str:
-        tank = self._tank
-        base = tank.name if tank else f"Tank {self._apparatus_id}"
-        return f"{base} Last Reading"
-
-    @property
     def native_value(self):
         tank = self._tank
-        return tank.last_reading if tank else None
+        return tank.last_reading_at if tank else None
 
 
-class MobileLinkPropaneCapacitySensor(_BaseTankSensor):
+    @property
+    def available(self) -> bool:
+        tank = self._tank
+        return super().available and bool(tank and tank.last_reading_at is not None)
+
+
+class MobileLinkPropaneCapacitySensor(_ConnectedDiagnosticSensor):
+    _attr_translation_key = "capacity"
+    _attr_native_unit_of_measurement = UnitOfVolume.GALLONS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:storage-tank-outline"
-    _attr_native_unit_of_measurement = "gal"
+    _attr_suggested_display_precision = 1
 
     def __init__(self, coordinator: MobileLinkCoordinator, apparatus_id: int) -> None:
         super().__init__(coordinator, apparatus_id)
         self._attr_unique_id = f"mobilelink_propane_{apparatus_id}_capacity"
 
     @property
-    def name(self) -> str:
-        tank = self._tank
-        base = tank.name if tank else f"Tank {self._apparatus_id}"
-        return f"{base} Capacity"
-
-    @property
     def native_value(self):
         tank = self._tank
-        return tank.capacity if tank else None
+        return tank.capacity_gallons if tank else None
+
+    @property
+    def available(self) -> bool:
+        tank = self._tank
+        return super().available and bool(tank and tank.capacity_gallons is not None)
 
 
-class MobileLinkPropaneBatterySensor(_BaseTankSensor):
+class MobileLinkPropaneBatterySensor(_ConnectedDiagnosticSensor):
+    _attr_translation_key = "battery"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:battery"
 
     def __init__(self, coordinator: MobileLinkCoordinator, apparatus_id: int) -> None:
@@ -163,29 +193,28 @@ class MobileLinkPropaneBatterySensor(_BaseTankSensor):
         self._attr_unique_id = f"mobilelink_propane_{apparatus_id}_battery"
 
     @property
-    def name(self) -> str:
-        tank = self._tank
-        base = tank.name if tank else f"Tank {self._apparatus_id}"
-        return f"{base} Battery"
-
-    @property
     def native_value(self):
         tank = self._tank
-        return tank.battery_level if tank else None
+        if not tank:
+            return None
+        return tank.battery_percent
+
+    @property
+    def available(self) -> bool:
+        if not super().available:
+            return False
+        tank = self._tank
+        return tank is not None and tank.battery_percent is not None
 
 
-class MobileLinkPropaneStatusSensor(_BaseTankSensor):
+class MobileLinkPropaneStatusSensor(_ConnectedDiagnosticSensor):
+    _attr_translation_key = "status"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_icon = "mdi:access-point-network"
 
     def __init__(self, coordinator: MobileLinkCoordinator, apparatus_id: int) -> None:
         super().__init__(coordinator, apparatus_id)
         self._attr_unique_id = f"mobilelink_propane_{apparatus_id}_status"
-
-    @property
-    def name(self) -> str:
-        tank = self._tank
-        base = tank.name if tank else f"Tank {self._apparatus_id}"
-        return f"{base} Status"
 
     @property
     def native_value(self):
