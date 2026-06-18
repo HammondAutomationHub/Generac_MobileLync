@@ -6,7 +6,19 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import PERCENTAGE, UnitOfDuration, UnitOfVolume
+from homeassistant.const import PERCENTAGE, UnitOfVolume
+
+try:
+    from homeassistant.const import UnitOfDuration
+
+    _DAYS_UNIT = UnitOfDuration.DAYS
+except ImportError:
+    try:
+        from homeassistant.const import UnitOfTime
+
+        _DAYS_UNIT = UnitOfTime.DAYS
+    except ImportError:
+        _DAYS_UNIT = "d"
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -100,7 +112,7 @@ class _ServiceSensor(CoordinatorEntity[MobileLinkCoordinator], SensorEntity):
 
 class MobileLinkCookieAgeSensor(_ServiceSensor):
     _attr_translation_key = "cookie_age"
-    _attr_native_unit_of_measurement = UnitOfDuration.DAYS
+    _attr_native_unit_of_measurement = _DAYS_UNIT
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:cookie-clock"
 
