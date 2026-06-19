@@ -26,7 +26,6 @@ from .const import (
     LOGIN_URL,
     OPT_COOKIE_LIFETIME_DAYS,
     OPT_COOKIE_WARN_DAYS,
-    OPT_CREATE_BATTERY_SENSOR,
     OPT_CREATE_CAPACITY_SENSOR,
     OPT_CREATE_LAST_READING_SENSOR,
     OPT_CREATE_STATUS_SENSOR,
@@ -267,9 +266,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                         OPT_CREATE_CAPACITY_SENSOR: user_input.get(
                             OPT_CREATE_CAPACITY_SENSOR, False
                         ),
-                        OPT_CREATE_BATTERY_SENSOR: user_input.get(
-                            OPT_CREATE_BATTERY_SENSOR, False
-                        ),
                         OPT_CREATE_STATUS_SENSOR: user_input.get(
                             OPT_CREATE_STATUS_SENSOR, False
                         ),
@@ -313,10 +309,6 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Optional(
                         OPT_CREATE_CAPACITY_SENSOR,
                         default=self.config_entry.options.get(OPT_CREATE_CAPACITY_SENSOR, False),
-                    ): bool,
-                    vol.Optional(
-                        OPT_CREATE_BATTERY_SENSOR,
-                        default=self.config_entry.options.get(OPT_CREATE_BATTERY_SENSOR, False),
                     ): bool,
                     vol.Optional(
                         OPT_CREATE_STATUS_SENSOR,

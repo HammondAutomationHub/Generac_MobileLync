@@ -52,7 +52,6 @@
           "selected_tanks": "Tanks",
           "create_last_reading_sensor": "Create last reading sensor",
           "create_capacity_sensor": "Create capacity sensor",
-          "create_battery_sensor": "Create battery sensor",
           "create_status_sensor": "Create connection status sensor",
           "cookie_lifetime_days": "Estimated cookie lifetime",
           "cookie_warn_days": "Warn before expiry"

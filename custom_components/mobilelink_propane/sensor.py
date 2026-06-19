@@ -29,7 +29,6 @@ from homeassistant.util import dt as dt_util
 from .const import (
     CONF_SELECTED_TANKS,
     DOMAIN,
-    OPT_CREATE_BATTERY_SENSOR,
     OPT_CREATE_CAPACITY_SENSOR,
     OPT_CREATE_LAST_READING_SENSOR,
     OPT_CREATE_STATUS_SENSOR,
@@ -70,7 +69,6 @@ async def async_setup_entry(
 
     create_last = entry.options.get(OPT_CREATE_LAST_READING_SENSOR, False)
     create_capacity = entry.options.get(OPT_CREATE_CAPACITY_SENSOR, False)
-    create_battery = entry.options.get(OPT_CREATE_BATTERY_SENSOR, False)
     create_status = entry.options.get(OPT_CREATE_STATUS_SENSOR, False)
 
     entities: list[SensorEntity] = [
@@ -79,13 +77,12 @@ async def async_setup_entry(
     ]
     for apparatus_id in selected_ids:
         entities.append(MobileLinkPropanePercentSensor(coordinator, apparatus_id))
+        entities.append(MobileLinkPropaneBatterySensor(coordinator, apparatus_id))
 
         if create_last:
             entities.append(MobileLinkPropaneLastReadingSensor(coordinator, apparatus_id))
         if create_capacity:
             entities.append(MobileLinkPropaneCapacitySensor(coordinator, apparatus_id))
-        if create_battery:
-            entities.append(MobileLinkPropaneBatterySensor(coordinator, apparatus_id))
         if create_status:
             entities.append(MobileLinkPropaneStatusSensor(coordinator, apparatus_id))
 

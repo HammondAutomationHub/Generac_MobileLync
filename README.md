@@ -6,7 +6,9 @@ A Home Assistant custom integration to monitor **Generac propane tank levels** v
 
 - Propane tank level monitoring (percentage)
 - Multiple tank support with per-tank selection during setup
-- Optional diagnostic sensors for last reading, capacity, battery, and connection status
+- Propane level sensor for each selected tank (always created)
+- Battery sensor for each tank (always created; Mobile Link reports values like `good`)
+- Optional diagnostic sensors for last reading, capacity, and connection status
 - Cookie-based authentication that works with Generac's anti-bot protections
 - Automatic session expiry detection with persistent notification and guided re-authentication
 - Proactive cookie refresh reminders with configurable estimated lifetime
@@ -191,7 +193,7 @@ If you upgrade from an older version, the cookie timer starts when you update. R
 From the integration card, choose **Configure** to:
 
 - Change which tanks are monitored
-- Enable or disable optional sensors (last reading, capacity, battery, status)
+- Enable or disable optional sensors (last reading, capacity, status)
 - Set estimated cookie lifetime and warning lead time
 
 Changes apply immediately after saving.
